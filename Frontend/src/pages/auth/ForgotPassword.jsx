@@ -5,6 +5,7 @@ import authIllustration from '../../assets/auth_illustration.png';
 import logo from '../../assets/logo.png';
 import { api } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
+import { PasswordInput } from '../../components/PasswordInput';
 
 export function ForgotPassword() {
   const navigate = useNavigate();
@@ -215,34 +216,20 @@ export function ForgotPassword() {
             <form className="space-y-4" onSubmit={handleResetPassword}>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">New Password</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Lock className="h-4 w-4 text-slate-400" />
-                  </div>
-                  <input 
-                    type="password"
-                    name="new_password"
-                    className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#4169e1]/50 focus:border-[#4169e1] transition-all bg-white text-sm"
-                    placeholder="At least 6 characters"
-                    required
-                  />
-                </div>
+                <PasswordInput
+                  name="new_password"
+                  placeholder="At least 6 characters"
+                  leftIcon={<Lock className="h-4 w-4 text-slate-400" />}
+                />
               </div>
 
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">Confirm Password</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <ShieldCheck className="h-4 w-4 text-slate-400" />
-                  </div>
-                  <input 
-                    type="password"
-                    name="confirm_password"
-                    className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#4169e1]/50 focus:border-[#4169e1] transition-all bg-white text-sm"
-                    placeholder="Confirm your password"
-                    required
-                  />
-                </div>
+                <PasswordInput
+                  name="confirm_password"
+                  placeholder="Confirm your password"
+                  leftIcon={<ShieldCheck className="h-4 w-4 text-slate-400" />}
+                />
               </div>
               
               <button 

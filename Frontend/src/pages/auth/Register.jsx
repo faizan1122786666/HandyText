@@ -6,6 +6,7 @@ import logo from '../../assets/logo.png';
 import { setLoggedIn } from '../../utils/auth';
 import { api } from '../../utils/api';
 import { GoogleLogin } from '@react-oauth/google';
+import { PasswordInput } from '../../components/PasswordInput';
 
 export function Register() {
   const navigate = useNavigate();
@@ -129,20 +130,7 @@ export function Register() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">Password</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                </div>
-                <input 
-                  type="password"
-                  name="password"
-                  className="w-full pl-9 pr-9 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#4169e1]/50 focus:border-[#4169e1] transition-all bg-white text-sm"
-                  placeholder="Enter your password"
-                  required
-                />
-              </div>
+              <PasswordInput name="password" placeholder="Enter your password" />
             </div>
 
             <button 

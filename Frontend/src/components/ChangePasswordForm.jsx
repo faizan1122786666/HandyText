@@ -3,6 +3,10 @@ import { Key } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { useToast } from '../context/ToastContext';
 import { api } from '../utils/api';
+import { PasswordInput } from './PasswordInput';
+
+const passwordFieldClass =
+  'w-full pl-3.5 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 focus:bg-white transition-all font-semibold text-slate-800 text-sm';
 
 export function ChangePasswordForm() {
   const { addToast } = useToast();
@@ -66,32 +70,35 @@ export function ChangePasswordForm() {
         <div className="space-y-5">
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Current Password</label>
-            <input 
-              type="password" 
+            <PasswordInput
               value={passwordData.currentPassword}
               onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 focus:bg-white transition-all font-semibold text-slate-800 text-sm"
+              leftIcon={null}
+              required={false}
+              className={passwordFieldClass}
               placeholder="Enter your current password"
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">New Password</label>
-              <input 
-                type="password" 
+              <PasswordInput
                 value={passwordData.newPassword}
                 onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 focus:bg-white transition-all font-semibold text-slate-800 text-sm"
+                leftIcon={null}
+                required={false}
+                className={passwordFieldClass}
                 placeholder="Enter new password"
               />
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">Confirm New Password</label>
-              <input 
-                type="password" 
+              <PasswordInput
                 value={passwordData.confirmNewPassword}
                 onChange={(e) => setPasswordData({ ...passwordData, confirmNewPassword: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 focus:bg-white transition-all font-semibold text-slate-800 text-sm"
+                leftIcon={null}
+                required={false}
+                className={passwordFieldClass}
                 placeholder="Confirm new password"
               />
             </div>

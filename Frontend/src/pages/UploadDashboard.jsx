@@ -42,12 +42,75 @@ const getExtension = (filename = '') => {
   return filename.slice(dotIndex).toLowerCase();
 };
 
+const escapeHtml = (value = '') => value
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+const buildEditorHtmlFromPlainText = (text = '') => {
+  const rawLines = text
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .split('\n');
+
+  const lines = rawLines.filter((line, index) => {
+    if (line.trim()) return true;
+
+    const previous = rawLines[index - 1]?.trim() || '';
+    const next = rawLines[index + 1]?.trim() || '';
+    if (!previous || !next) return false;
+
+    const previousLooksWrapped = (
+      /[-–—]$/.test(previous) ||
+      (!/[.!?:;]$/.test(previous) && previous.length > 45)
+    );
+    const nextContinuesSentence = /^[a-z,(]/.test(next);
+    const isWrappedSentence = previousLooksWrapped && nextContinuesSentence;
+
+    return !isWrappedSentence;
+  });
+
+  return lines.map((line, index) => {
+    if (!line.trim()) return '<div class="ocr-blank-line"><br></div>';
+    const leadingSpaces = line.match(/^\s*/)?.[0]?.length || 0;
+    const indent = Math.min(leadingSpaces, 24);
+    const escaped = escapeHtml(line.trimEnd());
+    const style = indent ? ` style="padding-left:${indent * 0.45}em"` : '';
+    return `<div${style}>${escaped}</div>`;
+  }).join('');
+};
+
 // Add a helper icon for shortening text
 const ShortenIcon = ({ size, className }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M4 7h16" /><path d="M4 12h11" /><path d="M4 17h8" />
   </svg>
 );
+
+const HELP_TOOLTIP_TEXT = 'HandyText that convert handwritten text into digital text';
+
+function HelpIconButton() {
+  return (
+    <div className="relative group">
+      <button
+        type="button"
+        className="hover:text-slate-800 transition-colors"
+        aria-describedby="handytext-help-tooltip"
+      >
+        <HelpCircle size={18} />
+      </button>
+      <div
+        id="handytext-help-tooltip"
+        role="tooltip"
+        className="pointer-events-none absolute right-0 top-full mt-2 z-[110] w-56 rounded-lg bg-slate-800 px-3 py-2.5 text-[11px] leading-snug font-medium text-white shadow-xl opacity-0 invisible translate-y-0.5 transition-all duration-150 group-hover:opacity-100 group-hover:visible group-hover:translate-y-0"
+      >
+        {HELP_TOOLTIP_TEXT}
+      </div>
+    </div>
+  );
+}
 
 export function UploadDashboard() {
   const { addToast } = useToast();
@@ -89,6 +152,7 @@ export function UploadDashboard() {
 
   // AI Suggestions State
   const [suggestions, setSuggestions] = useState([]);
+  const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
 
   const AI_ACTION_MAP = {
@@ -174,9 +238,7 @@ export function UploadDashboard() {
   const getEditorPlainText = () => editorRef.current?.innerText ?? editorText;
 
   const syncLanguageFromText = (text) => {
-    if (URDU_TEXT_REGEX.test(text) && selectedLanguage.code !== 'ur') {
-      setSelectedLanguage(URDU_LANGUAGE);
-    }
+    return text;
   };
 
   const applyEditorWithHighlights = (text, suggestionList, activeId = null) => {
@@ -188,17 +250,7 @@ export function UploadDashboard() {
     if (suggestionList?.length) {
       editorRef.current.innerHTML = buildHighlightedHtml(plain, suggestionList, activeId);
     } else {
-      // Convert plain text to proper HTML with paragraph tags
-      const lines = plain.split('\n');
-      let html = '';
-      for (let line of lines) {
-        if (line.trim()) {
-          html += `<p>${line}</p>`;
-        } else {
-          html += '<p>&nbsp;</p>';
-        }
-      }
-      editorRef.current.innerHTML = html;
+      editorRef.current.innerHTML = buildEditorHtmlFromPlainText(plain);
     }
   };
 
@@ -266,10 +318,18 @@ export function UploadDashboard() {
         setActivePage(newPages.length);
       }
       
-      // Remove from enhanced images
+      // Remove from enhanced images and edit history
       const newEnhancedImages = { ...enhancedImages };
       delete newEnhancedImages[pageToDelete.id];
       setEnhancedImages(newEnhancedImages);
+
+      const newImageHistory = { ...imageHistory };
+      delete newImageHistory[pageToDelete.id];
+      setImageHistory(newImageHistory);
+
+      const newHistoryIndex = { ...historyIndex };
+      delete newHistoryIndex[pageToDelete.id];
+      setHistoryIndex(newHistoryIndex);
       
       // Try to delete from backend
       try {
@@ -292,6 +352,8 @@ export function UploadDashboard() {
 
     const currentPage = pages[activePage - 1];
     if (!currentPage) return;
+
+    const viewBeforeEnhance = getViewSnapshot(currentPage.id);
 
     if (replicateApiKey) {
       try {
@@ -356,27 +418,25 @@ export function UploadDashboard() {
 
         // Get the enhanced image
         const enhancedImageUrl = result.output;
-        
-        // Save enhanced image
-        setEnhancedImages(prev => ({
-          ...prev,
-          [currentPage.id]: enhancedImageUrl
-        }));
+        applyViewWithHistory(currentPage.id, {
+          ...viewBeforeEnhance,
+          enhancedImage: enhancedImageUrl,
+        });
 
         addToast('Image enhanced successfully with AI!', 'success');
       } catch (error) {
         console.error('Enhancement error:', error);
         addToast('AI enhancement failed, using basic enhancement', 'warning');
-        await handleBasicEnhance(currentPage);
+        await handleBasicEnhance(currentPage, viewBeforeEnhance);
       } finally {
         setEnhancingWithApi(false);
       }
     } else {
-      await handleBasicEnhance(currentPage);
+      await handleBasicEnhance(currentPage, viewBeforeEnhance);
     }
   };
 
-  const handleBasicEnhance = async (currentPage) => {
+  const handleBasicEnhance = async (currentPage, viewBeforeEnhance) => {
     return new Promise((resolve) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
@@ -406,12 +466,11 @@ export function UploadDashboard() {
 
         // Get enhanced image URL
         const enhancedUrl = canvas.toDataURL('image/png');
-
-        // Save enhanced image
-        setEnhancedImages(prev => ({
-          ...prev,
-          [currentPage.id]: enhancedUrl
-        }));
+        const viewBefore = viewBeforeEnhance ?? getViewSnapshot(currentPage.id);
+        applyViewWithHistory(currentPage.id, {
+          ...viewBefore,
+          enhancedImage: enhancedUrl,
+        });
 
         addToast('Image enhanced successfully!', 'success');
         resolve();
@@ -472,34 +531,147 @@ export function UploadDashboard() {
     setIsDragging(false);
   };
 
-  // Add current image state to history
-  const addToImageHistory = (pageId) => {
+  const getViewSnapshot = (pageId) => ({
+    enhancedImage: enhancedImages[pageId] ?? null,
+    zoom,
+    rotation,
+  });
+
+  const normalizeSnapshot = (entry, page) => {
+    if (typeof entry === 'string') {
+      const isOriginal = page && entry === page.image;
+      return { enhancedImage: isOriginal ? null : entry, zoom: 1, rotation: 0 };
+    }
+    return {
+      enhancedImage: entry?.enhancedImage ?? null,
+      zoom: entry?.zoom ?? 1,
+      rotation: entry?.rotation ?? 0,
+    };
+  };
+
+  const snapshotsEqual = (a, b, page) => {
+    const x = normalizeSnapshot(a, page);
+    const y = normalizeSnapshot(b, page);
+    return (
+      x.enhancedImage === y.enhancedImage &&
+      x.zoom === y.zoom &&
+      x.rotation === y.rotation
+    );
+  };
+
+  const applyViewSnapshot = (pageId, snapshot) => {
+    setEnhancedImages(prev => {
+      const next = { ...prev };
+      if (snapshot.enhancedImage) {
+        next[pageId] = snapshot.enhancedImage;
+      } else {
+        delete next[pageId];
+      }
+      return next;
+    });
+    setZoom(snapshot.zoom);
+    setRotation(snapshot.rotation);
+  };
+
+  // Record any viewer edit (enhance, crop, zoom, rotate, fit) for undo/redo
+  const applyViewWithHistory = (pageId, nextSnapshot) => {
     const currentPage = pages.find(p => p.id === pageId);
     if (!currentPage) return;
-    
-    const currentImage = enhancedImages[pageId] || currentPage.image;
-    
+
+    const current = getViewSnapshot(pageId);
+
     setImageHistory(prev => {
       const history = [...(prev[pageId] || [])];
-      const index = historyIndex[pageId] || 0;
-      
-      // Remove any future history if we're not at the latest state
-      const trimmedHistory = history.slice(0, index + 1);
-      trimmedHistory.push(currentImage);
-      
-      // Keep history within max limit
-      if (trimmedHistory.length > MAX_HISTORY) {
-        trimmedHistory.shift();
+      const index = historyIndex[pageId] ?? 0;
+      const trimmed = history.slice(0, index + 1);
+
+      if (trimmed.length === 0) {
+        trimmed.push(current);
+      } else if (!snapshotsEqual(trimmed[trimmed.length - 1], current, currentPage)) {
+        trimmed.push(current);
       }
-      
-      // Also update history index here to keep them in sync
-      setHistoryIndex(prevIdx => ({
-        ...prevIdx,
-        [pageId]: Math.min(trimmedHistory.length - 1, MAX_HISTORY - 1),
-      }));
-      
-      return { ...prev, [pageId]: trimmedHistory };
+      trimmed.push(nextSnapshot);
+
+      while (trimmed.length > MAX_HISTORY) {
+        trimmed.shift();
+      }
+
+      const newIndex = trimmed.length - 1;
+      setHistoryIndex(prevIdx => ({ ...prevIdx, [pageId]: newIndex }));
+      return { ...prev, [pageId]: trimmed };
     });
+
+    applyViewSnapshot(pageId, nextSnapshot);
+  };
+
+  const getActivePageOrToast = () => {
+    if (pages.length === 0) {
+      addToast('Please upload an image first!', 'info');
+      return null;
+    }
+    return pages[activePage - 1] ?? null;
+  };
+
+  const handleZoomIn = () => {
+    const page = getActivePageOrToast();
+    if (!page) return;
+    const cur = getViewSnapshot(page.id);
+    applyViewWithHistory(page.id, { ...cur, zoom: Math.min(2, cur.zoom + 0.1) });
+  };
+
+  const handleZoomOut = () => {
+    const page = getActivePageOrToast();
+    if (!page) return;
+    const cur = getViewSnapshot(page.id);
+    applyViewWithHistory(page.id, { ...cur, zoom: Math.max(0.5, cur.zoom - 0.1) });
+  };
+
+  const handleFit = () => {
+    const page = getActivePageOrToast();
+    if (!page) return;
+    const cur = getViewSnapshot(page.id);
+    if (cur.zoom === 1 && cur.rotation === 0) return;
+    applyViewWithHistory(page.id, { ...cur, zoom: 1, rotation: 0 });
+  };
+
+  const handleRotate = () => {
+    const page = getActivePageOrToast();
+    if (!page) return;
+    const cur = getViewSnapshot(page.id);
+    applyViewWithHistory(page.id, { ...cur, rotation: cur.rotation + 90 });
+  };
+
+  // Restore zoom/rotation when switching pages
+  useEffect(() => {
+    const page = pages[activePage - 1];
+    if (!page) {
+      setZoom(1);
+      setRotation(0);
+      return;
+    }
+    const history = imageHistory[page.id];
+    if (!history?.length) {
+      setZoom(1);
+      setRotation(0);
+      return;
+    }
+    const index = historyIndex[page.id] ?? 0;
+    const snap = normalizeSnapshot(history[index], page);
+    setZoom(snap.zoom);
+    setRotation(snap.rotation);
+  }, [activePage, pages[activePage - 1]?.id]);
+
+  const canUndoImage = () => {
+    const currentPage = pages[activePage - 1];
+    if (!currentPage) return false;
+    return (historyIndex[currentPage.id] || 0) > 0;
+  };
+
+  const canRedoImage = () => {
+    const currentPage = pages[activePage - 1];
+    if (!currentPage) return false;
+    const history = imageHistory[currentPage.id] || [];
+    return (historyIndex[currentPage.id] || 0) < history.length - 1;
   };
 
   // Undo last image edit
@@ -518,20 +690,11 @@ export function UploadDashboard() {
     }
     
     const newIndex = index - 1;
-    const previousImage = history[newIndex];
-    
-    // Update enhanced images
-    const newEnhancedImages = { ...enhancedImages };
-    if (newIndex === 0) {
-      // Back to original image, remove from enhanced
-      delete newEnhancedImages[currentPage.id];
-    } else {
-      newEnhancedImages[currentPage.id] = previousImage;
-    }
-    
-    setEnhancedImages(newEnhancedImages);
+    const snapshot = normalizeSnapshot(history[newIndex], currentPage);
+
+    applyViewSnapshot(currentPage.id, snapshot);
     setHistoryIndex(prev => ({ ...prev, [currentPage.id]: newIndex }));
-    
+
     addToast('Undo successful!', 'success');
   };
 
@@ -551,14 +714,11 @@ export function UploadDashboard() {
     }
     
     const newIndex = index + 1;
-    const nextImage = history[newIndex];
-    
-    const newEnhancedImages = { ...enhancedImages };
-    newEnhancedImages[currentPage.id] = nextImage;
-    
-    setEnhancedImages(newEnhancedImages);
+    const snapshot = normalizeSnapshot(history[newIndex], currentPage);
+
+    applyViewSnapshot(currentPage.id, snapshot);
     setHistoryIndex(prev => ({ ...prev, [currentPage.id]: newIndex }));
-    
+
     addToast('Redo successful!', 'success');
   };
 
@@ -567,9 +727,8 @@ export function UploadDashboard() {
     
     const currentPage = pages[activePage - 1];
     if (!currentPage) return;
-    
-    // Add current state to history first
-    addToImageHistory(currentPage.id);
+
+    const viewBeforeCrop = getViewSnapshot(currentPage.id);
     
     // Calculate crop area
     const x = Math.min(cropStart.x, cropEnd.x);
@@ -592,16 +751,13 @@ export function UploadDashboard() {
       ctx.drawImage(img, x, y, width, height, 0, 0, width, height);
       
       const croppedUrl = canvas.toDataURL('image/png');
-      
-      // Update the page image
-      const newPages = [...pages];
-      newPages[activePage - 1] = { ...currentPage, image: croppedUrl };
-      setPages(newPages);
-      
-      // Also update enhanced images
-      const newEnhancedImages = { ...enhancedImages };
-      delete newEnhancedImages[currentPage.id];
-      setEnhancedImages(newEnhancedImages);
+
+      applyViewWithHistory(currentPage.id, {
+        ...viewBeforeCrop,
+        enhancedImage: croppedUrl,
+        zoom: 1,
+        rotation: 0,
+      });
       
       setIsCropping(false);
       setCropStart({ x: 0, y: 0 });
@@ -614,6 +770,7 @@ export function UploadDashboard() {
 
   const fetchAiCorrections = async (conversionId, action = 'proofread') => {
     setLoadingSuggestions(true);
+    setShowAllSuggestions(false);
     try {
       const plain = getEditorPlainText();
       const data = await api.post(`/ai/correct/${conversionId}?action=${action}`, { text: plain });
@@ -631,6 +788,7 @@ export function UploadDashboard() {
       }
 
       setSuggestions(items);
+      setShowAllSuggestions(false);
       setActiveSuggestionId(null);
       applyEditorWithHighlights(plain, items, null);
 
@@ -640,6 +798,7 @@ export function UploadDashboard() {
     } catch (err) {
       addToast(err?.message || 'Could not load AI suggestions', 'error');
       setSuggestions([]);
+      setShowAllSuggestions(false);
       applyEditorWithHighlights(getEditorPlainText(), [], null);
     } finally {
       setLoadingSuggestions(false);
@@ -655,6 +814,7 @@ export function UploadDashboard() {
     const updated = current.replace(suggestion.oldText, suggestion.newText);
     const remaining = suggestions.filter((s) => s.id !== suggestion.id);
     setSuggestions(remaining);
+    if (remaining.length <= 3) setShowAllSuggestions(false);
     setActiveSuggestionId(null);
     applyEditorWithHighlights(updated, remaining, null);
     addToast('Correction applied', 'success');
@@ -663,6 +823,7 @@ export function UploadDashboard() {
   const handleIgnoreSuggestion = (id) => {
     const remaining = suggestions.filter((s) => s.id !== id);
     setSuggestions(remaining);
+    if (remaining.length <= 3) setShowAllSuggestions(false);
     setActiveSuggestionId((prev) => (prev === id ? null : prev));
     applyEditorWithHighlights(getEditorPlainText(), remaining, null);
   };
@@ -948,6 +1109,11 @@ export function UploadDashboard() {
     }
   }, [activePage, ocrData?.id]);
 
+  useEffect(() => {
+    document.documentElement.classList.remove('dark');
+    localStorage.removeItem('handytext-theme');
+  }, []);
+
   // Apply red underlines when the suggestion list changes (not on every hover)
   useEffect(() => {
     if (!editorRef.current || !suggestions.length || isProcessing) return;
@@ -1018,7 +1184,7 @@ export function UploadDashboard() {
                 </span>
               )}
             </div>
-            <button className="hover:text-slate-800 transition-colors"><HelpCircle size={18} /></button>
+            <HelpIconButton />
           </div>
         </div>
         
@@ -1356,7 +1522,7 @@ export function UploadDashboard() {
               )}
             </div>
             
-            <button className="hover:text-slate-800 transition-colors"><HelpCircle size={18} /></button>
+            <HelpIconButton />
           </div>
         </div>
       </header>
@@ -1375,13 +1541,27 @@ export function UploadDashboard() {
             <div className="relative flex items-center gap-1">
               <button 
                 onClick={undoImageEdit}
-                className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-md transition-colors"
+                disabled={!canUndoImage()}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors",
+                  canUndoImage()
+                    ? "text-slate-600 hover:bg-slate-100"
+                    : "text-slate-300 cursor-not-allowed"
+                )}
+                title="Undo"
               >
                 <Undo2 size={14} />
               </button>
               <button 
                 onClick={redoImageEdit}
-                className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-md transition-colors"
+                disabled={!canRedoImage()}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors",
+                  canRedoImage()
+                    ? "text-slate-600 hover:bg-slate-100"
+                    : "text-slate-300 cursor-not-allowed"
+                )}
+                title="Redo"
               >
                 <Redo2 size={14} />
               </button>
@@ -1542,19 +1722,19 @@ export function UploadDashboard() {
           
           {/* Image Toolbar */}
           <div className="flex items-center justify-center gap-6 py-2.5 border-t border-slate-100 shrink-0 bg-white">
-            <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} className="flex flex-col items-center gap-1 text-slate-500 hover:text-[#3461ff] transition-colors">
+            <button onClick={handleZoomIn} className="flex flex-col items-center gap-1 text-slate-500 hover:text-[#3461ff] transition-colors">
               <ZoomIn size={16} />
               <span className="text-[9px] font-bold">Zoom In</span>
             </button>
-            <button onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} className="flex flex-col items-center gap-1 text-slate-500 hover:text-[#3461ff] transition-colors">
+            <button onClick={handleZoomOut} className="flex flex-col items-center gap-1 text-slate-500 hover:text-[#3461ff] transition-colors">
               <ZoomOut size={16} />
               <span className="text-[9px] font-bold">Zoom Out</span>
             </button>
-            <button onClick={() => { setZoom(1); setRotation(0); }} className="flex flex-col items-center gap-1 text-slate-500 hover:text-[#3461ff] transition-colors">
+            <button onClick={handleFit} className="flex flex-col items-center gap-1 text-slate-500 hover:text-[#3461ff] transition-colors">
               <Maximize size={16} />
               <span className="text-[9px] font-bold">Fit</span>
             </button>
-            <button onClick={() => setRotation(r => r + 90)} className="flex flex-col items-center gap-1 text-slate-500 hover:text-[#3461ff] transition-colors">
+            <button onClick={handleRotate} className="flex flex-col items-center gap-1 text-slate-500 hover:text-[#3461ff] transition-colors">
               <RotateCw size={16} />
               <span className="text-[9px] font-bold">Rotate</span>
             </button>
@@ -1709,9 +1889,9 @@ export function UploadDashboard() {
               ref={editorRef}
               dir={selectedLanguage.dir}
               className={cn(
-                "absolute inset-0 p-6 overflow-y-auto leading-relaxed text-slate-800 outline-none whitespace-pre-wrap break-words",
+                "absolute inset-0 p-6 overflow-y-auto leading-[1.25] text-slate-800 outline-none whitespace-pre-wrap break-words",
                 selectedLanguage.code === 'ur' ? "font-['Jameel_Noori_Nastaleeq',_Tahoma,_Arial] text-xl" : "font-sans text-[13px]",
-                "[&_p]:mb-2",
+                "[&_div]:min-h-[1.05em] [&_div]:mb-0 [&_.ocr-blank-line]:min-h-[0.25em]",
                 isProcessing && "pointer-events-none text-transparent"
               )}
               contentEditable={!isProcessing}
@@ -1912,11 +2092,13 @@ export function UploadDashboard() {
                   <div className="mb-6">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-[13px] font-bold text-slate-800">AI Suggestions</h3>
-                      <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold flex items-center justify-center">{suggestions.length}</span>
+                      <span className="px-2 h-5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold flex items-center justify-center">
+                        {showAllSuggestions ? suggestions.length : Math.min(3, suggestions.length)} / {suggestions.length}
+                      </span>
                     </div>
                     
                     <div className="flex flex-col gap-2.5 mb-4">
-                      {suggestions.map(suggestion => (
+                      {(showAllSuggestions ? suggestions : suggestions.slice(0, 3)).map(suggestion => (
                         <div
                           key={suggestion.id}
                           role="button"
@@ -1961,6 +2143,16 @@ export function UploadDashboard() {
                         </div>
                       ))}
                     </div>
+
+                    {!showAllSuggestions && suggestions.length > 3 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllSuggestions(true)}
+                        className="w-full mb-2 py-2 text-[11px] font-bold text-white bg-[#3461ff] hover:bg-[#2b51d6] rounded-lg transition-colors"
+                      >
+                        Scan all suggestions ({suggestions.length - 3} more)
+                      </button>
+                    )}
 
                     {conversionId && (
                       <button

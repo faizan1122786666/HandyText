@@ -1,11 +1,12 @@
 from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from docx.enum.text import WD_COLOR_INDEX
 from docx.oxml.shared import OxmlElement, qn
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT
+from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.units import inch
 from bs4 import BeautifulSoup
 import os
@@ -13,13 +14,68 @@ import uuid
 import re
 from xml.sax.saxutils import escape
 
+
+def _safe_export_name(filename: str) -> str:
+    base = os.path.basename(filename or "document")
+    base = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", base).strip(" .")
+    return base or "document"
+
+
 def generate_txt(text: str, filename: str) -> str:
     """Generate a .txt file and return its path."""
-    file_path = f"exports/{uuid.uuid4()}_{filename}.txt"
+    file_path = f"exports/{uuid.uuid4()}_{_safe_export_name(filename)}.txt"
     os.makedirs("exports", exist_ok=True)
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(text)
     return file_path
+
+
+def _css_value(style: str, name: str) -> str:
+    match = re.search(rf"{re.escape(name)}\s*:\s*([^;]+)", style or "", flags=re.I)
+    return match.group(1).strip().lower() if match else ""
+
+
+def _is_highlighted(node) -> bool:
+    if getattr(node, "name", None) == "mark":
+        return True
+    style = node.get("style", "") if hasattr(node, "get") else ""
+    return bool(_css_value(style, "background-color") or _css_value(style, "background"))
+
+
+def _is_bold(node) -> bool:
+    if getattr(node, "name", None) in ("b", "strong"):
+        return True
+    style = node.get("style", "") if hasattr(node, "get") else ""
+    weight = _css_value(style, "font-weight")
+    return weight in ("bold", "bolder", "600", "700", "800", "900")
+
+
+def _is_italic(node) -> bool:
+    if getattr(node, "name", None) in ("i", "em"):
+        return True
+    return _css_value(node.get("style", "") if hasattr(node, "get") else "", "font-style") == "italic"
+
+
+def _is_underline(node) -> bool:
+    if getattr(node, "name", None) == "u":
+        return True
+    decoration = _css_value(node.get("style", "") if hasattr(node, "get") else "", "text-decoration")
+    return "underline" in decoration
+
+
+def _is_strike(node) -> bool:
+    if getattr(node, "name", None) in ("s", "strike", "del"):
+        return True
+    decoration = _css_value(node.get("style", "") if hasattr(node, "get") else "", "text-decoration")
+    return "line-through" in decoration
+
+
+def _block_elements(soup: BeautifulSoup):
+    blocks = soup.find_all(["p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6"], recursive=True)
+    if blocks:
+        return blocks
+    return [soup]
+
 
 def parse_html_to_docx(html_content: str, doc: Document):
     """Parse HTML and add to Word document with formatting."""
@@ -27,76 +83,52 @@ def parse_html_to_docx(html_content: str, doc: Document):
         return
     
     soup = BeautifulSoup(html_content, 'html.parser')
-    
-    # Process each child element
-    for element in soup.children:
-        if element.name in ['p', 'div'] or (element.string and element.string.strip()):
-            # Create paragraph
-            paragraph = doc.add_paragraph()
-            
-            # Set paragraph style
-            paragraph.paragraph_format.space_after = Pt(6)
-            paragraph.paragraph_format.line_spacing = 1.5
-            paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
-            
-            # Process inline elements (text, <b>, <i>, <u>, <span>)
-            def process_node(node, run=None):
-                if node.name is None:
-                    # Text node
-                    text = str(node)
-                    if text and text.strip() or len(text) > 0:
-                        if run is None:
-                            run = paragraph.add_run(text)
-                        else:
-                            run.add_text(text)
-                elif node.name == 'br':
-                    # Line break
-                    if run is None:
-                        run = paragraph.add_run()
-                    run.add_break()
-                elif node.name in ['b', 'strong']:
-                    # Bold
-                    if run is None:
-                        run = paragraph.add_run()
-                    run.bold = True
-                    for child in node.children:
-                        process_node(child, run)
-                    run.bold = False
-                elif node.name in ['i', 'em']:
-                    # Italic
-                    if run is None:
-                        run = paragraph.add_run()
-                    run.italic = True
-                    for child in node.children:
-                        process_node(child, run)
-                    run.italic = False
-                elif node.name in ['u']:
-                    # Underline
-                    if run is None:
-                        run = paragraph.add_run()
-                    run.underline = True
-                    for child in node.children:
-                        process_node(child, run)
-                    run.underline = False
-                elif node.name == 'mark' or (node.name == 'span' and 'background-color' in node.get('style', '')):
-                    # Highlight
-                    if run is None:
-                        run = paragraph.add_run()
-                    # Yellow highlight
-                    run.font.highlight_color = 7  # WD_COLOR_INDEX.YELLOW
-                    for child in node.children:
-                        process_node(child, run)
-                    run.font.highlight_color = None
-                else:
-                    # Recursively process other elements
-                    for child in node.children:
-                        process_node(child, run)
-            
-            process_node(element)
+
+    def add_runs(paragraph, node, state):
+        if getattr(node, "name", None) is None:
+            text = str(node).replace("\xa0", " ")
+            if text:
+                run = paragraph.add_run(text)
+                run.bold = state["bold"]
+                run.italic = state["italic"]
+                run.underline = state["underline"]
+                run.font.strike = state["strike"]
+                if state["highlight"]:
+                    run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+            return
+
+        if node.name == "br":
+            paragraph.add_run().add_break()
+            return
+
+        next_state = {
+            "bold": state["bold"] or _is_bold(node),
+            "italic": state["italic"] or _is_italic(node),
+            "underline": state["underline"] or _is_underline(node),
+            "strike": state["strike"] or _is_strike(node),
+            "highlight": state["highlight"] or _is_highlighted(node),
+        }
+
+        for child in node.children:
+            add_runs(paragraph, child, next_state)
+
+    for element in _block_elements(soup):
+        paragraph = doc.add_paragraph()
+        paragraph.paragraph_format.space_after = Pt(4)
+        paragraph.paragraph_format.line_spacing = 1.15
+        paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+
+        if element.name in ["h1", "h2", "h3"] or element.get("data-auto-heading") == "true":
+            paragraph.paragraph_format.space_after = Pt(8)
+            base_state = {"bold": True, "italic": False, "underline": False, "strike": False, "highlight": False}
+        else:
+            base_state = {"bold": False, "italic": False, "underline": False, "strike": False, "highlight": False}
+
+        add_runs(paragraph, element, base_state)
 
 def generate_docx(html_content: str, plain_text: str, filename: str) -> str:
     """Generate a .docx file and return its path."""
-    file_path = f"exports/{uuid.uuid4()}_{filename}.docx"
+    file_path = f"exports/{uuid.uuid4()}_{_safe_export_name(filename)}.docx"
     os.makedirs("exports", exist_ok=True)
     doc = Document()
     
@@ -133,30 +165,70 @@ def generate_docx(html_content: str, plain_text: str, filename: str) -> str:
     font.size = Pt(12)
     font.name = 'Times New Roman'
     
-    # Use plain text directly for reliability
-    # Split into paragraphs based on double newlines
-    paragraphs = plain_text.split('\n\n')
-    for para in paragraphs:
-        if para.strip():
+    if html_content:
+        parse_html_to_docx(html_content, doc)
+    else:
+        for line in (plain_text or "").splitlines():
             paragraph = doc.add_paragraph()
-            # Split into lines within the paragraph and join with spaces
-            # This allows the text to wrap properly and fill the full page width
-            lines = para.split('\n')
-            cleaned_para = ' '.join([line.strip() for line in lines if line.strip()])
-            paragraph.add_run(cleaned_para)
-            paragraph.paragraph_format.space_after = Pt(6)
-            paragraph.paragraph_format.line_spacing = 1.5
+            paragraph.add_run(line)
+            paragraph.paragraph_format.space_after = Pt(4)
+            paragraph.paragraph_format.line_spacing = 1.15
             paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
-        else:
-            # Add empty paragraph for spacing
-            doc.add_paragraph()
     
     doc.save(file_path)
     return file_path
 
+
+def _html_to_reportlab_markup(html_content: str) -> list[str]:
+    soup = BeautifulSoup(html_content, "html.parser")
+
+    def node_to_markup(node, state) -> str:
+        if getattr(node, "name", None) is None:
+            return escape(str(node).replace("\xa0", " "))
+        if node.name == "br":
+            return "<br/>"
+
+        next_state = {
+            "bold": state["bold"] or _is_bold(node),
+            "italic": state["italic"] or _is_italic(node),
+            "underline": state["underline"] or _is_underline(node),
+            "strike": state["strike"] or _is_strike(node),
+            "highlight": state["highlight"] or _is_highlighted(node),
+        }
+
+        inner = "".join(node_to_markup(child, next_state) for child in node.children)
+        if not inner:
+            return ""
+        if not state["highlight"] and next_state["highlight"]:
+            inner = f'<font backColor="yellow">{inner}</font>'
+        if not state["strike"] and next_state["strike"]:
+            inner = f"<strike>{inner}</strike>"
+        if not state["underline"] and next_state["underline"]:
+            inner = f"<u>{inner}</u>"
+        if not state["italic"] and next_state["italic"]:
+            inner = f"<i>{inner}</i>"
+        if not state["bold"] and next_state["bold"]:
+            inner = f"<b>{inner}</b>"
+        return inner
+
+    paragraphs = []
+    for element in _block_elements(soup):
+        base_state = {
+            "bold": element.name in ["h1", "h2", "h3"] or element.get("data-auto-heading") == "true",
+            "italic": False,
+            "underline": False,
+            "strike": False,
+            "highlight": False,
+        }
+        content = "".join(node_to_markup(child, base_state) for child in element.children).strip()
+        if base_state["bold"] and content:
+            content = f"<b>{content}</b>"
+        paragraphs.append(content or "&nbsp;")
+    return paragraphs
+
 def generate_pdf(html_content: str, plain_text: str, filename: str) -> str:
     """Generate a .pdf file and return its path."""
-    file_path = f"exports/{uuid.uuid4()}_{filename}.pdf"
+    file_path = f"exports/{uuid.uuid4()}_{_safe_export_name(filename)}.pdf"
     os.makedirs("exports", exist_ok=True)
     
     doc = SimpleDocTemplate(
@@ -176,29 +248,25 @@ def generate_pdf(html_content: str, plain_text: str, filename: str) -> str:
         parent=styles['Normal'],
         fontName='Times-Roman',
         fontSize=12,
-        leading=18,  # 1.5 line spacing
+        leading=15,
         alignment=TA_LEFT,
         leftIndent=0,
         rightIndent=0,
         firstLineIndent=0,
-        spaceAfter=6
+        spaceAfter=4
     )
     
     story = []
-    
-    # Use plain text directly - it's simpler and more reliable
-    # Split into paragraphs based on double newlines
-    paragraphs = plain_text.split('\n\n')
-    
+
+    if html_content:
+        paragraphs = _html_to_reportlab_markup(html_content)
+    else:
+        paragraphs = [escape(line) if line.strip() else "" for line in (plain_text or "").splitlines()]
+
     for para in paragraphs:
         if para.strip():
-            # Split into lines within the paragraph and join with spaces
-            # This allows the text to wrap properly and fill the full page width
-            lines = para.split('\n')
-            cleaned_para = ' '.join([line.strip() for line in lines if line.strip()])
-            story.append(Paragraph(escape(cleaned_para), normal_style))
+            story.append(Paragraph(para, normal_style))
         else:
-            # Add spacing for empty paragraphs
             story.append(Spacer(1, 6))
     
     # Custom page template with border

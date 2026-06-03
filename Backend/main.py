@@ -1,11 +1,18 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import logging
 import os
 
 from app.config import settings
-from app.routers import auth, upload, export, ai, feedback
+from app.routers import auth, upload, export, ai, feedback, ocr, graph
 from app.utils.tesseract_setup import check_tesseract
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+logger = logging.getLogger("handytext")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -38,7 +45,7 @@ async def lifespan(app: FastAPI):
 
     # Create upload directory if not exists
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    os.makedirs("exports", exist_ok=True)
+    os.makedirs(settings.EXPORT_DIR, exist_ok=True)
 
     tess = check_tesseract(settings.TESSERACT_CMD)
     if tess["installed"]:
@@ -80,6 +87,20 @@ async def tesseract_health():
     return check_tesseract(settings.TESSERACT_CMD)
 
 
+@app.get("/health/ocr")
+async def ocr_health():
+    from app.services.ocr_service import _get_easyocr, SUPPORTED_LANGUAGES
+
+    tess = check_tesseract(settings.TESSERACT_CMD)
+    easyocr_ok = _get_easyocr() is not None
+    return {
+        "status": "ok" if (tess["installed"] or easyocr_ok) else "degraded",
+        "tesseract": tess,
+        "easyocr": easyocr_ok,
+        "languages": list(SUPPORTED_LANGUAGES),
+    }
+
+
 @app.get("/health/db")
 async def db_health():
     ready = getattr(app.state, "db_ready", False)
@@ -94,6 +115,8 @@ app.include_router(upload.router)
 app.include_router(export.router)
 app.include_router(ai.router)
 app.include_router(feedback.router)
+app.include_router(ocr.router)
+app.include_router(graph.router)
 
 if __name__ == "__main__":
     import sys

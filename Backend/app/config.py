@@ -1,6 +1,14 @@
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 from typing import Optional
+
+_DEFAULT_TESSERACT = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    if os.name == "nt"
+    else "tesseract"
+)
+
 
 class Settings(BaseSettings):
     DATABASE_URL: str
@@ -8,10 +16,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     UPLOAD_DIR: str = "uploads/"
+    EXPORT_DIR: str = "exports/"
     MAX_FILE_SIZE_MB: int = 5
     ALLOWED_EXTENSIONS: str = ".jpg .jpeg .png .webp"
     CORS_ORIGINS: str = "http://localhost:5173"
-    TESSERACT_CMD: str = "tesseract"
+    TESSERACT_CMD: str = _DEFAULT_TESSERACT
 
     # Cloudinary Settings
     CLOUDINARY_CLOUD_NAME: Optional[str] = None

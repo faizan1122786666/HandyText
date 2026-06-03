@@ -1,0 +1,108 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+Backend/venv/
+Backend/.venv/
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*
+Frontend/.env
+Frontend/.env.local
+Backend/.env
+Backend/.env.local
+Backend/.env.example
+
+# Node.js
+node_modules/
+Frontend/node_modules/
+Backend/node_modules/
+
+# Build folders
+build/
+dist/
+Frontend/dist/
+Frontend/build/
+
+# Python packaging
+.Python
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.python-version
+
+# Logs
+*.log
+pip-log.txt
+
+# Test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backend generated files
+Backend/uploads/
+Backend/__pycache__/
+Backend/exports/
+
+# Keys and secrets
+KEYS.txt
+AI/*.txt
+Backend/AI/*.txt
+*.pem
+*.key
+
+# Database
+*.db
+*.sqlite3
+
+# AI model files (often very large)
+*.pt
+*.pth
+*.onnx
+*.h5

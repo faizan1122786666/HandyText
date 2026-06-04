@@ -1,5 +1,5 @@
 from docx import Document
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, RGBColor, Mm
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.enum.text import WD_COLOR_INDEX
 from docx.oxml.shared import OxmlElement, qn
@@ -153,6 +153,54 @@ def _block_elements(soup: BeautifulSoup):
     return [soup]
 
 
+def _is_blank_block(element) -> bool:
+    """A block carrying no visible text (e.g. an empty line <div><br></div>)."""
+    return not element.get_text(strip=True)
+
+
+def _is_heading_block(element) -> bool:
+    if getattr(element, "name", None) in ("h1", "h2", "h3", "h4", "h5", "h6"):
+        return True
+    return hasattr(element, "get") and element.get("data-auto-heading") == "true"
+
+
+def _group_blocks_into_paragraphs(blocks):
+    """Reflow per-line blocks into flowing paragraphs. The editor stores every
+    OCR line as its own <div>, which would otherwise export as a separate
+    half-filled line. Consecutive non-empty lines are merged into one paragraph
+    (so the text fills the full page width and wraps naturally); a blank line
+    starts a new paragraph and headings stand on their own."""
+    groups = []
+    current = []
+    for element in blocks:
+        if _is_blank_block(element):
+            if current:
+                groups.append(current)
+                current = []
+        elif _is_heading_block(element):
+            if current:
+                groups.append(current)
+                current = []
+            groups.append([element])
+        else:
+            current.append(element)
+    if current:
+        groups.append(current)
+    return groups
+
+
+def _reflow_plain_text(text: str) -> list[str]:
+    """Reflow raw text into paragraphs: blank lines separate paragraphs and
+    single line breaks are treated as soft wraps (joined), so each paragraph
+    fills the page width instead of breaking after every short line."""
+    paragraphs = []
+    for block in re.split(r"\n[ \t]*\n", (text or "").replace("\r\n", "\n")):
+        joined = " ".join(line.strip() for line in block.split("\n") if line.strip())
+        if joined:
+            paragraphs.append(joined)
+    return paragraphs
+
+
 def _set_paragraph_rtl(paragraph):
     """Mark a Word paragraph as right-to-left and justified (fill width). Word
     performs its own Arabic shaping, so this is all that's needed for correct
@@ -204,22 +252,29 @@ def parse_html_to_docx(html_content: str, doc: Document):
         for child in node.children:
             add_runs(paragraph, child, next_state)
 
-    for element in _block_elements(soup):
+    for group in _group_blocks_into_paragraphs(_block_elements(soup)):
         paragraph = doc.add_paragraph()
         paragraph.paragraph_format.space_after = Pt(4)
         paragraph.paragraph_format.line_spacing = 1.15
-        paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
 
-        if element.name in ["h1", "h2", "h3"] or element.get("data-auto-heading") == "true":
+        is_heading = len(group) == 1 and _is_heading_block(group[0])
+        if is_heading:
             paragraph.paragraph_format.space_after = Pt(8)
             base_state = {"bold": True, "italic": False, "underline": False, "strike": False, "highlight": False}
         else:
             base_state = {"bold": False, "italic": False, "underline": False, "strike": False, "highlight": False}
 
-        add_runs(paragraph, element, base_state)
+        # Merge the lines of this paragraph, separating them with a space so the
+        # text reflows to fill the line rather than breaking after each line.
+        for idx, element in enumerate(group):
+            if idx:
+                paragraph.add_run(" ")
+            add_runs(paragraph, element, base_state)
 
-        if _has_arabic(element.get_text()):
+        if _has_arabic(" ".join(el.get_text() for el in group)):
             _set_paragraph_rtl(paragraph)
+        else:
+            paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
 
 def generate_docx(html_content: str, plain_text: str, filename: str) -> str:
     """Generate a .docx file and return its path."""
@@ -227,10 +282,10 @@ def generate_docx(html_content: str, plain_text: str, filename: str) -> str:
     os.makedirs("exports", exist_ok=True)
     doc = Document()
     
-    # Set page size to A4
+    # Set page size to A4 (210mm x 297mm)
     section = doc.sections[0]
-    section.page_height = Pt(841.89)  # 11.69 inches
-    section.page_width = Pt(595.28)   # 8.27 inches
+    section.page_height = Mm(297)
+    section.page_width = Mm(210)
     section.left_margin = Pt(72)      # 1 inch
     section.right_margin = Pt(72)     # 1 inch
     section.top_margin = Pt(72)       # 1 inch
@@ -263,12 +318,12 @@ def generate_docx(html_content: str, plain_text: str, filename: str) -> str:
     if html_content:
         parse_html_to_docx(html_content, doc)
     else:
-        for line in (plain_text or "").splitlines():
+        for para_text in _reflow_plain_text(plain_text):
             paragraph = doc.add_paragraph()
-            paragraph.add_run(line)
+            paragraph.add_run(para_text)
             paragraph.paragraph_format.space_after = Pt(4)
             paragraph.paragraph_format.line_spacing = 1.15
-            if _has_arabic(line):
+            if _has_arabic(para_text):
                 _set_paragraph_rtl(paragraph)
             else:
                 paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
@@ -312,18 +367,26 @@ def _html_to_reportlab_markup(html_content: str) -> list[tuple[str, str]]:
         return inner
 
     paragraphs = []
-    for element in _block_elements(soup):
-        base_state = {
-            "bold": element.name in ["h1", "h2", "h3"] or element.get("data-auto-heading") == "true",
-            "italic": False,
-            "underline": False,
-            "strike": False,
-            "highlight": False,
-        }
-        content = "".join(node_to_markup(child, base_state) for child in element.children).strip()
-        if base_state["bold"] and content:
-            content = f"<b>{content}</b>"
-        paragraphs.append((content or "&nbsp;", element.get_text()))
+    for group in _group_blocks_into_paragraphs(_block_elements(soup)):
+        is_heading = len(group) == 1 and _is_heading_block(group[0])
+        parts = []
+        for element in group:
+            base_state = {
+                "bold": is_heading,
+                "italic": False,
+                "underline": False,
+                "strike": False,
+                "highlight": False,
+            }
+            content = "".join(node_to_markup(child, base_state) for child in element.children).strip()
+            if content:
+                parts.append(content)
+        # Join the merged lines with a space so the paragraph fills the width.
+        markup = " ".join(parts)
+        if is_heading and markup:
+            markup = f"<b>{markup}</b>"
+        plain = " ".join(el.get_text() for el in group)
+        paragraphs.append((markup or "&nbsp;", plain))
     return paragraphs
 
 def generate_pdf(html_content: str, plain_text: str, filename: str) -> str:
@@ -383,10 +446,7 @@ def generate_pdf(html_content: str, plain_text: str, filename: str) -> str:
     if html_content:
         paragraphs = _html_to_reportlab_markup(html_content)
     else:
-        paragraphs = [
-            (escape(line), line) if line.strip() else ("", "")
-            for line in (plain_text or "").splitlines()
-        ]
+        paragraphs = [(escape(p), p) for p in _reflow_plain_text(plain_text)]
 
     for markup, plain in paragraphs:
         if not (markup and markup.strip()):

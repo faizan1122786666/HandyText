@@ -403,7 +403,7 @@ export function Dashboard() {
             </ul>
 
             <div className="pt-10 flex justify-center lg:justify-start">
-              <RouterLink to={isLoggedIn() ? '/uploadpage' : '/login'} className="bg-[#3461ff] hover:bg-[#2b51d6] text-white px-8 py-4 rounded-xl font-semibold transition-all shadow-lg shadow-[#3461ff]/30 flex items-center gap-2 text-lg hover:scale-[1.02]">
+              <RouterLink to={isLoggedIn() ? '/convert' : '/login'} className="bg-[#3461ff] hover:bg-[#2b51d6] text-white px-8 py-4 rounded-xl font-semibold transition-all shadow-lg shadow-[#3461ff]/30 flex items-center gap-2 text-lg hover:scale-[1.02]">
                 Start Converting <ArrowRight size={20} />
               </RouterLink>
             </div>

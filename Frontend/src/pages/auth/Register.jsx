@@ -36,7 +36,7 @@ export function Register() {
       // Login after registration
       const loginData = await api.post('/auth/login', { username, password });
       setLoggedIn(loginData);
-      navigate('/uploadpage');
+      navigate('/convert');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -56,7 +56,7 @@ export function Register() {
         credential: credentialResponse.credential 
       });
       setLoggedIn(data);
-      navigate('/uploadpage');
+      navigate('/convert');
     } catch (err) {
       setError(err.message);
     } finally {

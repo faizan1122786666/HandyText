@@ -5,8 +5,9 @@ import {
   FileImage, MoreHorizontal, ChevronLeft, ZoomIn, ZoomOut, Maximize, RotateCw, Crop, Wand2, Plus,
   FileText, Undo2, Redo2, RefreshCw, Keyboard, Code, Sparkles, Bold, Italic, Underline, Strikethrough, Highlighter,
   AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered, RemoveFormatting, MessageSquare, History, Check, X,
-  Globe, FileDown, HardDrive, Scan
+  Globe, FileDown, HardDrive, Scan, SquarePen
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '../utils/cn';
 import { useToast } from '../context/ToastContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -112,13 +113,45 @@ function HelpIconButton() {
   );
 }
 
+// --- Workspace persistence (keep image + extracted text across page refresh) ---
+const WORKSPACE_STORAGE_KEY = 'handytext-workspace';
+
+const loadWorkspace = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(WORKSPACE_STORAGE_KEY));
+    return parsed && Array.isArray(parsed.pages) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+// Pick a durable image source for storage: a remote (Cloudinary) URL once the
+// page is OCR'd — small and permanent — otherwise the captured data URL.
+const durableImage = (page) => {
+  const filePath = page?.ocrData?.file_path;
+  if (filePath && /^https?:\/\//i.test(filePath)) return filePath;
+  return page?.imageData || page?.image || null;
+};
+
+// Rebuild a File from a data URL so a restored (not-yet-extracted) image can
+// still be sent to the OCR endpoint after a refresh.
+const dataUrlToFile = (dataUrl, filename = 'image.png') => {
+  const [meta, b64] = String(dataUrl).split(',');
+  const mime = meta.match(/:(.*?);/)?.[1] || 'image/png';
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new File([bytes], filename, { type: mime });
+};
+
 export function UploadDashboard() {
+  const navigate = useNavigate();
   const { addToast } = useToast();
   const { addNotification, unreadCount, markAllAsRead, notifications, clearNotifications } = useNotifications();
   const [activeTab, setActiveTab] = useState('ai');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [activePage, setActivePage] = useState(1);
-  const [pages, setPages] = useState([]); // Array of { id, image, ocrData }
+  const [activePage, setActivePage] = useState(() => loadWorkspace()?.activePage || 1);
+  const [pages, setPages] = useState(() => loadWorkspace()?.pages || []); // Array of { id, image, ocrData }
   const [aiSuggestion, setAiSuggestion] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState({ code: 'en', label: 'English (Auto)', dir: 'ltr' });
   
@@ -133,8 +166,11 @@ export function UploadDashboard() {
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
   const skipHighlightRebuild = useRef(false);
+  // Skip the automatic AI-correction fetch on the first sync (initial mount /
+  // workspace restore) so a page refresh does not spend a Gemini API call.
+  const didInitialSyncRef = useRef(false);
   const [editorText, setEditorText] = useState('');
-  const [documentTitle, setDocumentTitle] = useState('New Document');
+  const [documentTitle, setDocumentTitle] = useState(() => loadWorkspace()?.documentTitle || 'New Document');
   const [activeSuggestionId, setActiveSuggestionId] = useState(null);
 
   // Get current page data
@@ -796,10 +832,22 @@ export function UploadDashboard() {
         addToast(`${items.length} issue(s) highlighted — Accept or Ignore each`, 'success');
       }
     } catch (err) {
-      addToast(err?.message || 'Could not load AI suggestions', 'error');
-      setSuggestions([]);
+      const message = err?.message || '';
+      const plain = getEditorPlainText();
+      if (/quota|rate.?limit|\b429\b/i.test(message)) {
+        // Gemini free-tier limit reached — fall back to basic local checks
+        // instead of surfacing the raw API error.
+        const local = mapApiCorrections(buildLocalCorrections(plain), conversionId)
+          .filter((item) => plain.includes(item.oldText));
+        setSuggestions(local);
+        applyEditorWithHighlights(plain, local, null);
+        addToast('AI suggestions are temporarily unavailable (quota reached). Showing basic checks.', 'info');
+      } else {
+        addToast(message || 'Could not load AI suggestions', 'error');
+        setSuggestions([]);
+        applyEditorWithHighlights(plain, [], null);
+      }
       setShowAllSuggestions(false);
-      applyEditorWithHighlights(getEditorPlainText(), [], null);
     } finally {
       setLoadingSuggestions(false);
     }
@@ -880,7 +928,14 @@ export function UploadDashboard() {
     
     setDocumentTitle(uploadLabel);
     addToast('Image uploaded! Click "Extract Text" to run OCR.', 'info');
-    
+
+    // Capture a data URL so the uploaded image persists across a page refresh.
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPages((prev) => prev.map((p) => (p.id === tempId ? { ...p, imageData: reader.result } : p)));
+    };
+    reader.readAsDataURL(file);
+
     // Clear the input
     e.target.value = '';
   };
@@ -893,7 +948,16 @@ export function UploadDashboard() {
     }
     
     const currentPage = pages[activePage - 1];
-    if (!currentPage.file && !currentPage.ocrData) {
+    // After a refresh the original File object is gone; rebuild it from the
+    // persisted data URL so a restored image can still be extracted.
+    let sourceFile = currentPage.file;
+    if (!sourceFile) {
+      const durable = currentPage.imageData || currentPage.image;
+      if (typeof durable === 'string' && durable.startsWith('data:')) {
+        sourceFile = dataUrlToFile(durable, `${documentTitle || 'image'}.png`);
+      }
+    }
+    if (!sourceFile && !currentPage.ocrData) {
       addToast('Cannot extract text from this image', 'error');
       return;
     }
@@ -916,7 +980,7 @@ export function UploadDashboard() {
     
     try {
       const formData = new FormData();
-      formData.append('file', currentPage.file);
+      formData.append('file', sourceFile);
       formData.append('language', selectedLanguage.code);
       formData.append('enhanceImage', ocrSettings.enhanceImage);
       formData.append('handwritingMode', ocrSettings.handwritingMode);
@@ -1036,6 +1100,16 @@ export function UploadDashboard() {
     }
   };
 
+  // Open the full-page (MS Word-like) editor for the current document.
+  const handleOpenFullEditor = async () => {
+    if (!conversionId || String(conversionId).startsWith('temp-')) {
+      addToast('Extract text first, then open the editor', 'info');
+      return;
+    }
+    await saveEditedText(); // persist current inline edits so the editor loads them
+    navigate(`/document/${conversionId}/edit`);
+  };
+
   // Export Handler — download file and record name + size in notifications
   const handleExport = async (format) => {
     if (!conversionId) {
@@ -1104,15 +1178,43 @@ export function UploadDashboard() {
     setAiSuggestion('');
     applyTextToEditor(text, []);
     setDocumentTitle(ocrData?.original_filename || 'New Document');
-    if (ocrData?.id) {
+    // Only auto-fetch AI corrections after a real page change/extraction — not
+    // on the initial mount (a refresh would otherwise burn the Gemini quota).
+    if (ocrData?.id && didInitialSyncRef.current) {
       fetchAiCorrections(ocrData.id, 'proofread');
     }
+    didInitialSyncRef.current = true;
   }, [activePage, ocrData?.id]);
 
   useEffect(() => {
     document.documentElement.classList.remove('dark');
     localStorage.removeItem('handytext-theme');
   }, []);
+
+  // Persist the workspace so a page refresh keeps the uploaded image(s) and the
+  // extracted text instead of clearing everything.
+  useEffect(() => {
+    const writeSnapshot = (onlyExtracted) => {
+      const snapshotPages = (onlyExtracted ? pages.filter((p) => p.ocrData) : pages)
+        .map((p) => ({ id: p.id, image: durableImage(p), ocrData: p.ocrData || null }))
+        .filter((p) => p.image || p.ocrData);
+      localStorage.setItem(
+        WORKSPACE_STORAGE_KEY,
+        JSON.stringify({ activePage, documentTitle, pages: snapshotPages }),
+      );
+    };
+    try {
+      writeSnapshot(false);
+    } catch {
+      // localStorage quota exceeded (large data URLs): keep only OCR'd pages,
+      // which reference small remote image URLs.
+      try {
+        writeSnapshot(true);
+      } catch {
+        /* nothing more we can do */
+      }
+    }
+  }, [pages, activePage, documentTitle]);
 
   // Apply red underlines when the suggestion list changes (not on every hover)
   useEffect(() => {
@@ -1818,6 +1920,16 @@ export function UploadDashboard() {
               Extracted Text
             </div>
             <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                title="Open full editor (edit like MS Word)"
+                onClick={handleOpenFullEditor}
+                disabled={!ocrData || isProcessing}
+                className="flex items-center gap-1 px-2 py-1 text-[13px] font-semibold text-[#3461ff] bg-blue-50 hover:bg-blue-100 border border-[#3461ff]/30 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <SquarePen size={14} /> Edit
+              </button>
+              <div className="h-4 w-px bg-slate-200 mx-0.5"></div>
               <button onClick={() => handleFormat('undo')} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-md transition-colors">
                 <Undo2 size={14} />
               </button>

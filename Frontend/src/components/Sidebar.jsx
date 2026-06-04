@@ -15,7 +15,7 @@ import { logout, getLoggedInUser } from '../utils/auth';
 
 const menuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/' },
-  { id: 'convert', label: 'Convert Text', icon: Type, path: '/uploadpage' },
+  { id: 'convert', label: 'Convert Text', icon: Type, path: '/convert', match: ['/convert', '/uploadpage', '/handwriting'] },
   { id: 'history', label: 'History', icon: HistoryIcon, path: '/history' },
 ];
 
@@ -146,7 +146,9 @@ export function Sidebar({ isMobileOpen, isClosing, onCloseMobileMenu }) {
           )}
           {menuItems.map((item) => {
             const Icon = item.icon;
-            const isActive = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path));
+            const isActive = item.match
+              ? item.match.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`))
+              : location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path));
             
             return (
               <div key={item.id} className="relative group">

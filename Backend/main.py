@@ -5,7 +5,7 @@ import logging
 import os
 
 from app.config import settings
-from app.routers import auth, upload, export, ai, feedback, ocr, graph
+from app.routers import auth, upload, export, ai, feedback, ocr, graph, handwriting
 from app.utils.tesseract_setup import check_tesseract
 
 logging.basicConfig(
@@ -117,6 +117,7 @@ app.include_router(ai.router)
 app.include_router(feedback.router)
 app.include_router(ocr.router)
 app.include_router(graph.router)
+app.include_router(handwriting.router)
 
 if __name__ == "__main__":
     import sys

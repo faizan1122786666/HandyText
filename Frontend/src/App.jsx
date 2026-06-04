@@ -3,6 +3,9 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AdminLayout } from './layouts/AdminLayout'
 import { Dashboard } from './pages/Dashboard'
 import { UploadDashboard } from './pages/UploadDashboard'
+import { DocumentEditor } from './pages/DocumentEditor'
+import { ConvertSelect } from './pages/ConvertSelect'
+import { HandwritingGenerator } from './pages/HandwritingGenerator'
 import { History } from './pages/History'
 import { Settings } from './pages/Settings'
 import { Login } from './pages/auth/Login'
@@ -49,8 +52,16 @@ function App() {
             {/* Landing Page Route (No Sidebar) */}
             <Route path="/" element={<Dashboard />} />
 
+            {/* Full-screen Word-like document editor (No Sidebar) */}
+            <Route
+              path="/document/:id/edit"
+              element={<ProtectedRoute><DocumentEditor /></ProtectedRoute>}
+            />
+
             {/* Admin Layout Routes (Has Sidebar) */}
             <Route element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
+              <Route path="/convert" element={<ConvertSelect />} />
+              <Route path="/handwriting" element={<HandwritingGenerator />} />
               <Route path="/uploadpage" element={<UploadDashboard />} />
               <Route path="/history" element={<History />} />
               {/* Placeholder for other routes */}

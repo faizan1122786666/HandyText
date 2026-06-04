@@ -25,7 +25,7 @@ export function Login() {
     try {
       const data = await api.post('/auth/login', { username, password });
       setLoggedIn(data);
-      navigate('/uploadpage');
+      navigate('/convert');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -41,7 +41,7 @@ export function Login() {
         credential: credentialResponse.credential 
       });
       setLoggedIn(data);
-      navigate('/uploadpage');
+      navigate('/convert');
     } catch (err) {
       setError(err.message);
     } finally {

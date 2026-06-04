@@ -35,6 +35,8 @@ torchvision==0.17.2
 # Document export & utilities
 python-docx==1.1.2
 reportlab==4.2.0
+arabic-reshaper==3.0.1
+python-bidi==0.6.10
 beautifulsoup4==4.12.3
 requests==2.31.0
 chardet==5.2.0

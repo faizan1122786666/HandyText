@@ -1,5 +1,5 @@
 from docx import Document
-from docx.shared import Pt, RGBColor, Mm
+from docx.shared import Pt, RGBColor, Mm, Inches
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.enum.text import WD_COLOR_INDEX
 from docx.oxml.shared import OxmlElement, qn
@@ -220,9 +220,20 @@ def _reflow_plain_text(text: str) -> list[str]:
     fills the page width instead of breaking after every short line."""
     paragraphs = []
     for block in re.split(r"\n[ \t]*\n", (text or "").replace("\r\n", "\n")):
-        joined = " ".join(line.strip() for line in block.split("\n") if line.strip())
-        if joined:
-            paragraphs.append(joined)
+        current = ""
+        for line in block.split("\n"):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if _BULLET_RE.match(stripped):
+                # A bullet/numbered line starts its own paragraph.
+                if current:
+                    paragraphs.append(current)
+                current = stripped
+            else:
+                current = stripped if not current else f"{current} {stripped}"
+        if current:
+            paragraphs.append(current)
     return paragraphs
 
 
@@ -296,10 +307,19 @@ def parse_html_to_docx(html_content: str, doc: Document):
                 paragraph.add_run(" ")
             add_runs(paragraph, element, base_state)
 
-        if _has_arabic(" ".join(el.get_text() for el in group)):
+        group_text = " ".join(el.get_text() for el in group)
+        if _has_arabic(group_text):
             _set_paragraph_rtl(paragraph)
-        else:
+        elif _BULLET_RE.match(group_text):
+            # Hanging indent so wrapped lines align under the text.
             paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+            paragraph.paragraph_format.left_indent = Inches(0.3)
+            paragraph.paragraph_format.first_line_indent = Inches(-0.18)
+        elif is_heading:
+            paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+        else:
+            # Justify body text so each line fills the full width.
+            paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
 
 def generate_docx(html_content: str, plain_text: str, filename: str) -> str:
     """Generate a .docx file and return its path."""
@@ -350,8 +370,12 @@ def generate_docx(html_content: str, plain_text: str, filename: str) -> str:
             paragraph.paragraph_format.line_spacing = 1.15
             if _has_arabic(para_text):
                 _set_paragraph_rtl(paragraph)
-            else:
+            elif _BULLET_RE.match(para_text):
                 paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                paragraph.paragraph_format.left_indent = Inches(0.3)
+                paragraph.paragraph_format.first_line_indent = Inches(-0.18)
+            else:
+                paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
     
     doc.save(file_path)
     return file_path
@@ -432,18 +456,31 @@ def generate_pdf(html_content: str, plain_text: str, filename: str) -> str:
 
     arabic_ok = _register_arabic_font()
 
-    # Create a style that ensures text fills the full width
+    # Body style: justified so each line fills the full width edge-to-edge
+    # (the last/only line of a paragraph stays left, the default justify
+    # behaviour, so short lines and headings are not stretched).
     normal_style = ParagraphStyle(
         'CustomNormal',
         parent=styles['Normal'],
         fontName='Times-Roman',
         fontSize=12,
         leading=15,
-        alignment=TA_LEFT,
+        alignment=TA_JUSTIFY,
         leftIndent=0,
         rightIndent=0,
         firstLineIndent=0,
         spaceAfter=4
+    )
+
+    # Bullet/numbered list items: left-aligned with a hanging indent so wrapped
+    # continuation lines align under the text, not under the marker.
+    bullet_style = ParagraphStyle(
+        'CustomBullet',
+        parent=normal_style,
+        alignment=TA_LEFT,
+        leftIndent=20,
+        bulletIndent=6,
+        spaceAfter=4,
     )
 
     # Smart fill-width for Urdu / Arabic lines: lines long enough to wrap are
@@ -486,8 +523,15 @@ def generate_pdf(html_content: str, plain_text: str, filename: str) -> str:
                 story.append(Paragraph(escape(_shape_rtl(line)),
                                        arabic_right if is_last else arabic_justify))
         else:
-            story.append(Paragraph(markup, normal_style))
-    
+            bullet_match = _BULLET_RE.match(plain)
+            if bullet_match:
+                marker = bullet_match.group(1)
+                bullet = marker if marker[0].isdigit() else "•"
+                body = _BULLET_RE.sub("", markup, count=1)
+                story.append(Paragraph(body or "&nbsp;", bullet_style, bulletText=bullet))
+            else:
+                story.append(Paragraph(markup, normal_style))
+
     # Custom page template with border
     def on_page(canvas, doc):
         canvas.saveState()

@@ -4,8 +4,10 @@ OCR service: EasyOCR (primary) + Tesseract (fallback) for English, Urdu, and han
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
+import re
 import sys
 from typing import Literal, Optional
 
@@ -177,9 +179,16 @@ Rules:
 - If this is a letter, keep the address/date/greeting/body/closing/signature on separate lines like the original.
 - Use only {language_hint} text. Do not insert Urdu or Arabic-script characters unless the selected language is Urdu and they are visible in the image.
 - Correct obvious OCR-style character mistakes while keeping the original words and meaning.
+- Detect lines or phrases that are visibly written with marker, darker/thicker ink, bold handwriting, highlighted emphasis, or heading/title styling.
+- If a heading/title is visually darker, larger, underlined, centered, or written with marker, include that full heading line in bold_lines.
 - Do not summarize, rewrite, translate, or explain.
 - If a word is unclear, make the closest readable transcription.
-- Return only the extracted text.
+- Return only valid JSON with this shape:
+{{
+  "text": "layout-preserving extracted text",
+  "bold_lines": ["exact full heading/marker/darker lines that should be bold"],
+  "bold_phrases": ["exact marker/darker phrases that should be bold"]
+}}
 
 Selected OCR language: {language_hint}."""
 
@@ -187,11 +196,26 @@ Selected OCR language: {language_hint}."""
         model = genai.GenerativeModel("gemini-flash-latest")
         with Image.open(image_path) as image:
             response = model.generate_content([prompt, image])
-        text = (getattr(response, "text", "") or "").strip()
+        raw = (getattr(response, "text", "") or "").strip()
+        fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
+        if fence:
+            raw = fence.group(1).strip()
+        try:
+            parsed = json.loads(raw)
+            text = (parsed.get("text") or "").strip()
+            bold_lines = [str(item).strip() for item in parsed.get("bold_lines", []) if str(item).strip()]
+            bold_phrases = [str(item).strip() for item in parsed.get("bold_phrases", []) if str(item).strip()]
+        except json.JSONDecodeError:
+            text = raw
+            bold_lines = []
+            bold_phrases = []
+
         if not text:
             return None
         return {
             "text": text,
+            "bold_lines": bold_lines,
+            "bold_phrases": bold_phrases,
             "confidence": 0.92,
             "engine": "Gemini Vision",
             "word_count": len(text.split()),
@@ -251,7 +275,7 @@ def run_ocr(
     result = _best_ocr_result(easyocr_result, tesseract_result)
 
     ai_result = _run_gemini_vision_ocr(image_path, lang_code)
-    if ai_result and _text_quality_score(ai_result) >= _text_quality_score(result):
+    if ai_result:
         result = ai_result
 
     return result

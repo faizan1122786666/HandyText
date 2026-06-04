@@ -16,6 +16,7 @@ class ConversionOut(ConversionBase):
     user_id: Optional[str]
     file_path: str
     extracted_text: Optional[str]
+    edited_html: Optional[str] = None
     word_count: int
     char_count: int
     confidence_score: float

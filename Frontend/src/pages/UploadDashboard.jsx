@@ -960,7 +960,6 @@ export function UploadDashboard() {
     }
     
     const currentPage = pages[activePage - 1];
-<<<<<<< HEAD
     // After a refresh the original File object is gone; rebuild it from the
     // persisted data URL so a restored image can still be extracted.
     let sourceFile = currentPage.file;
@@ -970,10 +969,7 @@ export function UploadDashboard() {
         sourceFile = dataUrlToFile(durable, `${documentTitle || 'image'}.png`);
       }
     }
-    if (!sourceFile && !currentPage.ocrData) {
-=======
-    if (!currentPage.file) {
->>>>>>> 8343dc76d46e674b0619ce29d7b4a30aedf7652f
+    if (!sourceFile) {
       addToast('Cannot extract text from this image', 'error');
       return;
     }

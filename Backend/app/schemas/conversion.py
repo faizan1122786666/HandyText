@@ -16,7 +16,10 @@ class ConversionOut(ConversionBase):
     user_id: Optional[str]
     file_path: str
     extracted_text: Optional[str]
+<<<<<<< HEAD
     edited_text: Optional[str] = None
+=======
+>>>>>>> 8343dc76d46e674b0619ce29d7b4a30aedf7652f
     edited_html: Optional[str] = None
     word_count: int
     char_count: int

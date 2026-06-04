@@ -14,6 +14,7 @@ from ..services.image_service import preprocess_image
 from ..services.cloudinary_service import upload_image
 from ..config import settings
 from beanie import PydanticObjectId
+from html import escape
 
 router = APIRouter(prefix="/upload", tags=["Upload & OCR"])
 
@@ -25,6 +26,54 @@ def resolve_upload_filename(upload_filename: Optional[str]) -> str:
     if not name or name.lower() in ("blob", "undefined"):
         return f"Document_{datetime.utcnow().strftime('%Y-%m-%d_%H%M%S')}"
     return name
+
+
+def build_formatted_ocr_html(ocr_result: dict) -> Optional[str]:
+    text = (ocr_result.get("text") or "").strip("\n")
+    if not text:
+        return None
+
+    bold_lines = {line.strip() for line in ocr_result.get("bold_lines", []) if str(line).strip()}
+    bold_phrases = [phrase.strip() for phrase in ocr_result.get("bold_phrases", []) if str(phrase).strip()]
+
+    lines = text.splitlines()
+
+    def is_fallback_heading(line: str, index: int) -> bool:
+        stripped = line.strip()
+        if not stripped:
+            return False
+        if stripped in bold_lines:
+            return True
+        if index == 0 and len(stripped) <= 80 and not stripped.endswith((".", ",", ";")):
+            return True
+        if stripped.endswith(":") and len(stripped) <= 60:
+            return True
+        return False
+
+    def format_line(line: str, index: int) -> str:
+        escaped = escape(line.rstrip())
+        if is_fallback_heading(line, index):
+            return f"<div><strong>{escaped}</strong></div>"
+        for phrase in bold_phrases:
+            if phrase in line:
+                if len(phrase) >= max(6, len(line.strip()) * 0.65):
+                    return f"<div><strong>{escaped}</strong></div>"
+                escaped_phrase = escape(phrase)
+                escaped = escaped.replace(escaped_phrase, f"<strong>{escaped_phrase}</strong>", 1)
+        if not line.strip():
+            return '<div class="ocr-blank-line"><br></div>'
+        return f"<div>{escaped}</div>"
+
+    html_lines = []
+    for index, line in enumerate(lines):
+        if not line.strip() and html_lines:
+            next_line = lines[index + 1].strip() if index + 1 < len(lines) else ""
+            previous_is_heading = is_fallback_heading(lines[index - 1], index - 1)
+            if previous_is_heading and next_line:
+                continue
+        html_lines.append(format_line(line, index))
+
+    return "".join(html_lines)
 
 
 @router.post("/convert", response_model=ConversionOut)
@@ -77,6 +126,8 @@ async def convert_image(
 
         # Update record
         conversion.extracted_text = ocr_result["text"]
+        conversion.edited_text = ocr_result["text"]
+        conversion.edited_html = build_formatted_ocr_html(ocr_result)
         conversion.word_count = ocr_result["word_count"]
         conversion.char_count = ocr_result["char_count"]
         conversion.confidence_score = ocr_result["confidence"]

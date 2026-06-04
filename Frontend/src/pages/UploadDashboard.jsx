@@ -50,7 +50,16 @@ const escapeHtml = (value = '') => value
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
-const buildEditorHtmlFromPlainText = (text = '') => {
+const isLikelyDocumentHeading = (line = '', index = 0) => {
+  const value = line.trim();
+  if (!value) return false;
+  if (index === 0 && value.length <= 80 && !/[.,;]$/.test(value)) return true;
+  if (value.endsWith(':') && value.length <= 60) return true;
+  return false;
+};
+
+const buildEditorHtmlFromPlainText = (text = '', options = {}) => {
+  const { autoBoldHeadings = false } = options;
   const rawLines = text
     .replace(/\r\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
@@ -79,6 +88,9 @@ const buildEditorHtmlFromPlainText = (text = '') => {
     const indent = Math.min(leadingSpaces, 24);
     const escaped = escapeHtml(line.trimEnd());
     const style = indent ? ` style="padding-left:${indent * 0.45}em"` : '';
+    if (autoBoldHeadings && isLikelyDocumentHeading(line, index)) {
+      return `<div${style}><strong>${escaped}</strong></div>`;
+    }
     return `<div${style}>${escaped}</div>`;
   }).join('');
 };
@@ -948,6 +960,7 @@ export function UploadDashboard() {
     }
     
     const currentPage = pages[activePage - 1];
+<<<<<<< HEAD
     // After a refresh the original File object is gone; rebuild it from the
     // persisted data URL so a restored image can still be extracted.
     let sourceFile = currentPage.file;
@@ -958,13 +971,10 @@ export function UploadDashboard() {
       }
     }
     if (!sourceFile && !currentPage.ocrData) {
+=======
+    if (!currentPage.file) {
+>>>>>>> 8343dc76d46e674b0619ce29d7b4a30aedf7652f
       addToast('Cannot extract text from this image', 'error');
-      return;
-    }
-    
-    // If OCR already exists, do nothing (or ask if user wants to reprocess?)
-    if (currentPage.ocrData) {
-      addToast('Text already extracted for this page!', 'info');
       return;
     }
     
@@ -976,7 +986,7 @@ export function UploadDashboard() {
     
     setProcessingPages(prev => new Set([...prev, currentPage.id]));
     setIsProcessing(true);
-    addToast('Extracting text from image...', 'info');
+    addToast(currentPage.ocrData ? 'Re-extracting text from image...' : 'Extracting text from image...', 'info');
     
     try {
       const formData = new FormData();
@@ -991,6 +1001,7 @@ export function UploadDashboard() {
       // Update the page with actual OCR data and permanent ID
       const updatedPages = [...pages];
       const pageIndex = activePage - 1;
+      const previousId = currentPage.id;
       updatedPages[pageIndex] = {
         ...currentPage,
         id: data.id,
@@ -999,17 +1010,17 @@ export function UploadDashboard() {
       
       // Update history to use new ID
       setImageHistory(prev => {
-        const history = prev[currentPage.id];
+        const history = prev[previousId];
         const newHistory = { ...prev };
-        delete newHistory[currentPage.id];
+        delete newHistory[previousId];
         newHistory[data.id] = history;
         return newHistory;
       });
       
       setHistoryIndex(prev => {
-        const index = prev[currentPage.id];
+        const index = prev[previousId];
         const newIndex = { ...prev };
-        delete newIndex[currentPage.id];
+        delete newIndex[previousId];
         newIndex[data.id] = index;
         return newIndex;
       });
@@ -1017,9 +1028,22 @@ export function UploadDashboard() {
       setPages(updatedPages);
       
       const extracted = data.extracted_text || '';
-      applyTextToEditor(extracted);
+      if (data.edited_html && editorRef.current && /<(strong|b)\b/i.test(data.edited_html)) {
+        setEditorText(extracted);
+        editorRef.current.innerHTML = data.edited_html;
+      } else {
+        setEditorText(extracted);
+        if (editorRef.current) {
+          editorRef.current.innerHTML = buildEditorHtmlFromPlainText(extracted, { autoBoldHeadings: true });
+        } else {
+          applyTextToEditor(extracted);
+        }
+      }
       setDocumentTitle(data.original_filename || documentTitle);
-      addToast('OCR processing complete!', 'success');
+      setSuggestions([]);
+      setShowAllSuggestions(false);
+      setActiveSuggestionId(null);
+      addToast(currentPage.ocrData ? 'OCR re-extraction complete!' : 'OCR processing complete!', 'success');
       
       // Add notification
       addNotification({

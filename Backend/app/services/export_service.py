@@ -164,12 +164,32 @@ def _is_heading_block(element) -> bool:
     return hasattr(element, "get") and element.get("data-auto-heading") == "true"
 
 
+# A line that opens with a bullet/number marker is a list item and must not be
+# merged into the previous paragraph.
+_BULLET_RE = re.compile(r"^\s*([•●▪‣◦*–—-]|\d+[.)])\s+")
+
+
+def _starts_with_bullet(element) -> bool:
+    return bool(_BULLET_RE.match(element.get_text() or ""))
+
+
+def _is_fully_bold_block(element) -> bool:
+    """True when the whole block is bold (a label/heading like 'Functions:')."""
+    text = element.get_text(strip=True)
+    if not text:
+        return False
+    bold_text = "".join(b.get_text() for b in element.find_all(["b", "strong"]))
+    return bold_text.strip() == text
+
+
 def _group_blocks_into_paragraphs(blocks):
     """Reflow per-line blocks into flowing paragraphs. The editor stores every
     OCR line as its own <div>, which would otherwise export as a separate
-    half-filled line. Consecutive non-empty lines are merged into one paragraph
-    (so the text fills the full page width and wraps naturally); a blank line
-    starts a new paragraph and headings stand on their own."""
+    half-filled line. Consecutive wrapped lines are merged into one paragraph
+    (so text fills the full page width and wraps naturally), while structural
+    lines stay on their own: a blank line starts a new paragraph; headings and
+    fully-bold labels stand alone; and each bullet/numbered item starts a new
+    paragraph (its own wrapped continuation lines still merge into it)."""
     groups = []
     current = []
     for element in blocks:
@@ -177,11 +197,16 @@ def _group_blocks_into_paragraphs(blocks):
             if current:
                 groups.append(current)
                 current = []
-        elif _is_heading_block(element):
+        elif _is_heading_block(element) or _is_fully_bold_block(element):
             if current:
                 groups.append(current)
                 current = []
             groups.append([element])
+        elif _starts_with_bullet(element):
+            if current:
+                groups.append(current)
+                current = []
+            current = [element]
         else:
             current.append(element)
     if current:

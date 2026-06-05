@@ -18,6 +18,7 @@ import os
 import uuid
 import re
 from xml.sax.saxutils import escape
+from .ocr_layout import should_preserve_line_breaks
 
 
 # --- Right-to-left (Arabic-script) support ------------------------------------
@@ -153,6 +154,10 @@ def _block_elements(soup: BeautifulSoup):
     return [soup]
 
 
+def _blocks_plain_text(blocks) -> str:
+    return "\n".join(element.get_text(" ", strip=True) for element in blocks)
+
+
 def _is_blank_block(element) -> bool:
     """A block carrying no visible text (e.g. an empty line <div><br></div>)."""
     return not element.get_text(strip=True)
@@ -190,6 +195,9 @@ def _group_blocks_into_paragraphs(blocks):
     lines stay on their own: a blank line starts a new paragraph; headings and
     fully-bold labels stand alone; and each bullet/numbered item starts a new
     paragraph (its own wrapped continuation lines still merge into it)."""
+    if should_preserve_line_breaks(_blocks_plain_text(blocks)):
+        return [[element] for element in blocks if not _is_blank_block(element)]
+
     groups = []
     current = []
     for element in blocks:
@@ -218,6 +226,9 @@ def _reflow_plain_text(text: str) -> list[str]:
     """Reflow raw text into paragraphs: blank lines separate paragraphs and
     single line breaks are treated as soft wraps (joined), so each paragraph
     fills the page width instead of breaking after every short line."""
+    if should_preserve_line_breaks(text):
+        return [line.strip() for line in (text or "").replace("\r\n", "\n").split("\n") if line.strip()]
+
     paragraphs = []
     for block in re.split(r"\n[ \t]*\n", (text or "").replace("\r\n", "\n")):
         current = ""

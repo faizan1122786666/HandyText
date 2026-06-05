@@ -36,6 +36,11 @@ const formatFileSize = (bytes) => {
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 
+const friendlyAiError = (message = '') => {
+  if (/quota|rate.?limit|\b429\b/i.test(message)) return 'API limit exceeded.';
+  return message || 'Could not load AI suggestions';
+};
+
 const getExtension = (filename = '') => {
   const dotIndex = filename.lastIndexOf('.');
   if (dotIndex === -1) return '';
@@ -153,6 +158,19 @@ const dataUrlToFile = (dataUrl, filename = 'image.png') => {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return new File([bytes], filename, { type: mime });
+};
+
+const imageSourceToFile = async (source, filename = 'image.png') => {
+  if (typeof source !== 'string') return null;
+  if (source.startsWith('data:')) return dataUrlToFile(source, filename);
+  if (!/^https?:\/\//i.test(source)) return null;
+
+  const response = await fetch(source);
+  if (!response.ok) return null;
+  const blob = await response.blob();
+  const extension = blob.type?.split('/')[1] || 'png';
+  const safeName = /\.[a-z0-9]+$/i.test(filename) ? filename : `${filename}.${extension}`;
+  return new File([blob], safeName, { type: blob.type || 'image/png' });
 };
 
 export function UploadDashboard() {
@@ -852,9 +870,9 @@ export function UploadDashboard() {
           .filter((item) => plain.includes(item.oldText));
         setSuggestions(local);
         applyEditorWithHighlights(plain, local, null);
-        addToast('AI suggestions are temporarily unavailable (quota reached). Showing basic checks.', 'info');
+        addToast('API limit exceeded.', 'info');
       } else {
-        addToast(message || 'Could not load AI suggestions', 'error');
+        addToast(friendlyAiError(message), 'error');
         setSuggestions([]);
         applyEditorWithHighlights(plain, [], null);
       }
@@ -975,10 +993,8 @@ export function UploadDashboard() {
     // persisted data URL so a restored image can still be extracted.
     let sourceFile = currentPage.file;
     if (!sourceFile) {
-      const durable = currentPage.imageData || currentPage.image;
-      if (typeof durable === 'string' && durable.startsWith('data:')) {
-        sourceFile = dataUrlToFile(durable, `${documentTitle || 'image'}.png`);
-      }
+      const durable = currentPage.imageData || enhancedImages[currentPage.id] || currentPage.image;
+      sourceFile = await imageSourceToFile(durable, `${documentTitle || 'image'}.png`);
     }
     if (!sourceFile) {
       addToast('Cannot extract text from this image', 'error');
@@ -1107,7 +1123,7 @@ export function UploadDashboard() {
       await fetchAiCorrections(conversionId, action === 'improve' ? 'grammar' : action);
       addToast(`${actionLabel} completed!`, 'success');
     } catch (err) {
-      addToast(err?.message || 'AI action failed', 'error');
+      addToast(friendlyAiError(err?.message || 'AI action failed'), 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -1950,8 +1966,8 @@ export function UploadDashboard() {
               <button
                 type="button"
                 onClick={handleExtractText}
-                disabled={!currentPage || Boolean(currentPage.ocrData) || processingPages.has(currentPage.id)}
-                title="Extract text from current page"
+                disabled={!currentPage || processingPages.has(currentPage.id)}
+                title={currentPage?.ocrData ? 'Re-extract text from current page' : 'Extract text from current page'}
                 className="group h-10 w-12 sm:w-9 sm:h-16 rounded-md flex items-center justify-center text-slate-400 bg-transparent hover:bg-blue-50 hover:text-[#3461ff] transition-colors flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
               >
                 {processingPages.has(currentPage?.id) ? (

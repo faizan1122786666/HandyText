@@ -12,6 +12,8 @@ ACTION_PROMPTS = {
     "simplify": "Use simpler words suitable for easy reading.",
 }
 
+GEMINI_MODEL = "gemini-2.5-flash-lite"
+
 
 def get_gemini_api_key():
     master_keys_path = os.path.join(os.getcwd(), "KEYS.txt")
@@ -41,17 +43,24 @@ def _extract_json(raw: str) -> dict:
     return json.loads(text)
 
 
+def _friendly_ai_error(exc: Exception) -> str:
+    message = str(exc)
+    if re.search(r"quota|rate.?limit|\b429\b", message, flags=re.I):
+        return "API limit exceeded."
+    return "Could not load AI suggestions."
+
+
 async def get_ai_suggestions(text: str, action: str = "improve") -> str:
     """Return improved text as a single string (preserves line breaks)."""
     api_key = get_gemini_api_key()
     if not api_key:
-        return "Gemini API key not found. Add GEMINI_API_KEY to Backend/.env"
+        return "Gemini API key not found. Add it from Settings."
 
     instruction = ACTION_PROMPTS.get(action, ACTION_PROMPTS["improve"])
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-flash-latest")
+        model = genai.GenerativeModel(GEMINI_MODEL)
         prompt = f"""{instruction}
 
 IMPORTANT: Keep every line break and blank line exactly as in the source. Do not merge lines into one paragraph.
@@ -65,7 +74,7 @@ Return only the corrected text with the same line structure:"""
         return (response.text or "").strip()
     except Exception as e:
         print(f"Gemini AI Service Error: {e}")
-        return f"Error getting AI suggestions: {str(e)}"
+        return _friendly_ai_error(e)
 
 
 async def get_ocr_corrections(text: str, action: str = "proofread") -> dict:
@@ -77,14 +86,14 @@ async def get_ocr_corrections(text: str, action: str = "proofread") -> dict:
         return {
             "corrections": [],
             "corrected_text": text,
-            "message": "Gemini API key not found. Add GEMINI_API_KEY to Backend/.env",
+            "message": "Gemini API key not found. Add it from Settings.",
         }
 
     instruction = ACTION_PROMPTS.get(action, ACTION_PROMPTS["proofread"])
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-flash-latest")
+        model = genai.GenerativeModel(GEMINI_MODEL)
         prompt = f"""{instruction}
 
 You are reviewing OCR output from a handwritten document. The text must keep the same line breaks and blank lines as the original (like a stack trace or numbered list — one line per row).
@@ -136,5 +145,5 @@ Rules:
         return {
             "corrections": [],
             "corrected_text": text,
-            "message": f"Could not load AI suggestions: {str(e)}",
+            "message": _friendly_ai_error(e),
         }

@@ -10,6 +10,25 @@ _BLOCK_START_RE = re.compile(r'^\s*([•‣◦⁃·•\-\*]|\d+[.)])\s+')
 # because OCR commonly misreads a sentence-ending '.' as '_'.
 _TERMINAL_PUNCT = ('.', '!', '?', ':', ';', '_')
 
+_LETTER_FIELD_RE = re.compile(
+    r'\b(application|principal|subject|respected|sir|madam|dear|sincerely|faithfully|address|mobile|resume)\b',
+    flags=re.I,
+)
+
+
+def should_preserve_line_breaks(text: str) -> bool:
+    """Detect form-letter/application OCR where visual line breaks carry meaning."""
+    lines = [ln.strip() for ln in (text or "").replace('\r\n', '\n').split('\n') if ln.strip()]
+    if len(lines) < 2:
+        return False
+
+    joined = " ".join(lines)
+    field_hits = len(_LETTER_FIELD_RE.findall(joined))
+    short_lines = sum(1 for line in lines if len(line) <= 95)
+    punctuation_light = sum(1 for line in lines if not line.endswith(('.', '!', '?')))
+
+    return field_hits >= 3 and short_lines >= max(2, len(lines) // 2) and punctuation_light >= 2
+
 
 def reflow_paragraphs(text: str) -> str:
     """Join wrap-induced line breaks into flowing paragraphs.
@@ -26,6 +45,9 @@ def reflow_paragraphs(text: str) -> str:
     """
     if not text:
         return text
+
+    if should_preserve_line_breaks(text):
+        return "\n".join(ln.strip() for ln in text.replace('\r\n', '\n').split('\n')).strip()
 
     lines = text.replace('\r\n', '\n').split('\n')
 
@@ -158,7 +180,10 @@ def layout_text_from_detections(
             output_lines.append(line_text)
             prev_bottom = bottom
 
-    return reflow_paragraphs("\n".join(output_lines))
+    visual_text = "\n".join(output_lines)
+    if should_preserve_line_breaks(visual_text):
+        return visual_text.strip()
+    return reflow_paragraphs(visual_text)
 
 
 def low_confidence_spans(

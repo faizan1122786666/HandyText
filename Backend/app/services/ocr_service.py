@@ -159,7 +159,7 @@ def _run_gemini_vision_ocr(image_path: str, lang_code: str) -> Optional[dict]:
     Requires GEMINI_API_KEY in Backend/.env, KEYS.txt, or AI/gemini_key.txt.
     """
     try:
-        from .ai_service import get_gemini_api_key
+        from .ai_service import GEMINI_MODEL, get_gemini_api_key
         import google.generativeai as genai
 
         api_key = get_gemini_api_key()
@@ -193,7 +193,7 @@ Rules:
 Selected OCR language: {language_hint}."""
 
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-flash-latest")
+        model = genai.GenerativeModel(GEMINI_MODEL)
         with Image.open(image_path) as image:
             response = model.generate_content([prompt, image])
         raw = (getattr(response, "text", "") or "").strip()

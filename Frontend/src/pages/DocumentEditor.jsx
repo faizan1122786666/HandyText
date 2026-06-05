@@ -21,8 +21,34 @@ const HEADINGS = [
   { label: 'Heading 3', tag: 'H3' },
 ];
 
+const friendlyAiError = (message = '') => {
+  if (/quota|rate.?limit|\b429\b/i.test(message)) return 'API limit exceeded.';
+  return message || 'Could not load AI suggestions';
+};
+
 const escapeHtml = (value = '') =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const draftKeyFor = (id) => `handytext-document-draft-${id}`;
+
+const readDraft = (id) => {
+  try {
+    return JSON.parse(localStorage.getItem(draftKeyFor(id)));
+  } catch {
+    return null;
+  }
+};
+
+const writeDraft = (id, title, pageBorder, editor) => {
+  if (!id || !editor) return;
+  localStorage.setItem(draftKeyFor(id), JSON.stringify({
+    title,
+    pageBorder,
+    edited_text: editor.innerText,
+    edited_html: editor.innerHTML,
+    updated_at: Date.now(),
+  }));
+};
 
 // Turn raw OCR text (one line per \n) into editable block HTML.
 const plainToHtml = (text = '') => {
@@ -46,7 +72,7 @@ export function DocumentEditor() {
   const [saveState, setSaveState] = useState('saved'); // 'saved' | 'saving' | 'unsaved'
   const [stats, setStats] = useState({ words: 0, chars: 0 });
   const [fontFamily, setFontFamily] = useState('Times New Roman');
-  const [fontSize, setFontSize] = useState(12);
+  const [fontSize, setFontSize] = useState(18);
   const [active, setActive] = useState({ bold: false, italic: false, underline: false, strike: false });
   const [suggestions, setSuggestions] = useState([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
@@ -99,7 +125,7 @@ export function DocumentEditor() {
     } catch (err) {
       const local = mapApiCorrections(buildLocalCorrections(plain), id).filter((item) => plain.includes(item.oldText));
       setSuggestions(local);
-      if (!local.length) addToast(err?.message || 'Could not load AI suggestions', 'error');
+      if (!local.length) addToast(friendlyAiError(err?.message), 'error');
     } finally {
       setLoadingSuggestions(false);
     }
@@ -114,7 +140,13 @@ export function DocumentEditor() {
         if (cancelled) return;
         setTitle(data.original_filename || 'Document');
         setPageBorder(data.page_border !== false);
-        const html = data.edited_html?.trim()
+        const draft = readDraft(id);
+        if (draft?.title) setTitle(draft.title);
+        if (typeof draft?.pageBorder === 'boolean') setPageBorder(draft.pageBorder);
+
+        const html = draft?.edited_html?.trim()
+          ? draft.edited_html
+          : data.edited_html?.trim()
           ? data.edited_html
           : plainToHtml(data.edited_text || data.extracted_text || '');
         setDocumentHtml(html);
@@ -145,21 +177,22 @@ export function DocumentEditor() {
         edited_text: editorRef.current.innerText,
         edited_html: editorRef.current.innerHTML,
       });
+      writeDraft(id, title, pageBorder, editorRef.current);
       setSaveState('saved');
       if (!silent) addToast('Document saved', 'success');
     } catch (err) {
       setSaveState('unsaved');
       if (!silent) addToast(err?.message || 'Save failed', 'error');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [addToast, id, pageBorder, title]);
 
   // Debounced auto-save while typing
   const scheduleSave = useCallback(() => {
     setSaveState('unsaved');
+    writeDraft(id, title, pageBorder, editorRef.current);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => doSave({ silent: true }), 1500);
-  }, [doSave]);
+  }, [doSave, id, pageBorder, title]);
 
   useEffect(() => {
     const handler = () => refreshActive();
@@ -192,6 +225,7 @@ export function DocumentEditor() {
     const next = !pageBorder;
     setPageBorder(next);
     if (editorRef.current) {
+      writeDraft(id, title, next, editorRef.current);
       api.post(`/export/${id}/save-edited`, {
         edited_text: editorRef.current.innerText,
         edited_html: editorRef.current.innerHTML,
@@ -234,6 +268,11 @@ export function DocumentEditor() {
   };
 
   const handleBack = async () => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    writeDraft(id, title, pageBorder, editorRef.current);
     await doSave({ silent: true });
     navigate('/uploadpage');
   };

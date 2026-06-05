@@ -10,7 +10,7 @@ from ..schemas.conversion import ConversionOut, ConversionRename
 from ..utils.auth import get_current_user, get_optional_current_user
 from ..utils.file_validator import validate_file
 from ..services.ocr_service import run_ocr
-from ..services.ocr_layout import reflow_paragraphs
+from ..services.ocr_layout import reflow_paragraphs, should_preserve_line_breaks
 from ..services.image_service import preprocess_image
 from ..services.cloudinary_service import upload_image
 from ..config import settings
@@ -34,10 +34,12 @@ def build_formatted_ocr_html(ocr_result: dict) -> Optional[str]:
     if not text:
         return None
 
-    # EasyOCR text is already reflowed into paragraphs using box geometry. For
-    # engines that return text directly (Gemini Vision / Tesseract) the lines are
-    # hard-wrapped, so reflow them into paragraphs here.
-    if ocr_result.get("engine") != "EasyOCR":
+    preserve_lines = should_preserve_line_breaks(text)
+
+    # EasyOCR text is already reflowed using box geometry. For engines that
+    # return text directly (Gemini Vision / Tesseract), reflow hard wraps unless
+    # the document looks like a letter/application where line breaks are fields.
+    if ocr_result.get("engine") != "EasyOCR" and not preserve_lines:
         text = reflow_paragraphs(text)
 
     bold_lines = {line.strip() for line in ocr_result.get("bold_lines", []) if str(line).strip()}
@@ -131,11 +133,12 @@ async def convert_image(
             if original_result["text"].strip():
                 ocr_result = original_result
 
-        # Update record. Keep the raw extraction, but store reflowed paragraphs as
-        # the editable text so the editor and exports read left-to-right.
+        # Update record. Preserve application/letter line structure; otherwise
+        # store reflowed paragraphs so long body text reads left-to-right.
+        preserve_lines = should_preserve_line_breaks(ocr_result["text"])
         flowed_text = (
             ocr_result["text"]
-            if ocr_result.get("engine") == "EasyOCR"
+            if ocr_result.get("engine") == "EasyOCR" or preserve_lines
             else reflow_paragraphs(ocr_result["text"])
         )
         conversion.extracted_text = ocr_result["text"]

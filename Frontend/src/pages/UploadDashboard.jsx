@@ -865,16 +865,28 @@ export function UploadDashboard() {
   };
 
   const handleAcceptSuggestion = (suggestion) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const mark = editor.querySelector(`[data-suggestion-id="${CSS.escape(suggestion.id)}"]`);
     const current = getEditorPlainText();
-    if (!current.includes(suggestion.oldText)) {
+    let updated = '';
+
+    if (mark) {
+      mark.replaceWith(document.createTextNode(suggestion.newText));
+      updated = editor.innerText;
+    } else if (current.includes(suggestion.oldText)) {
+      updated = current.replace(suggestion.oldText, suggestion.newText);
+    } else {
       addToast('Could not find that text in the editor', 'info');
       return;
     }
-    const updated = current.replace(suggestion.oldText, suggestion.newText);
+
     const remaining = suggestions.filter((s) => s.id !== suggestion.id);
     setSuggestions(remaining);
     if (remaining.length <= 3) setShowAllSuggestions(false);
     setActiveSuggestionId(null);
+    setEditorText(updated);
     applyEditorWithHighlights(updated, remaining, null);
     addToast('Correction applied', 'success');
   };
@@ -1079,7 +1091,7 @@ export function UploadDashboard() {
     }
   };
 
-  // AI Actions Handler — full-text improve (keeps line breaks) + refresh correction list
+  // AI Actions Handler — refresh point-by-point correction cards.
   const handleAIAction = async (actionLabel) => {
     if (!conversionId) {
       addToast('Please upload a document first', 'info');
@@ -1091,11 +1103,8 @@ export function UploadDashboard() {
     setIsProcessing(true);
 
     try {
-      const suggestData = await api.post(`/ai/suggest/${conversionId}?action=${action}`);
-      await fetchAiCorrections(conversionId, action === 'grammar' ? 'grammar' : 'proofread');
-      if (suggestData.suggestion && !suggestData.suggestion.startsWith('Error')) {
-        setAiSuggestion(suggestData.suggestion);
-      }
+      setAiSuggestion('');
+      await fetchAiCorrections(conversionId, action === 'improve' ? 'grammar' : action);
       addToast(`${actionLabel} completed!`, 'success');
     } catch (err) {
       addToast(err?.message || 'AI action failed', 'error');

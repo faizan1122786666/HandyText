@@ -69,7 +69,7 @@ export function buildHighlightedHtml(text, suggestions, activeSuggestionId = nul
     const title = `Suggested: ${suggestion.newText}${suggestion.reason ? ` (${suggestion.reason})` : ''}`;
 
     const highlightedSegment = escapeHtml(text.slice(match.start, match.end));
-    html += `<mark class="ocr-error${isActive ? ' ocr-error-active' : ''}" data-suggestion-id="${suggestion.id}" title="${escapeHtml(title)}">${highlightedSegment}</mark>`;
+    html += `<mark class="ocr-error${isActive ? ' ocr-error-active' : ''}" data-suggestion-id="${suggestion.id}" data-suggestion-start="${match.start}" title="${escapeHtml(title)}">${highlightedSegment}</mark>`;
 
     cursor = match.end;
   }

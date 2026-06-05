@@ -20,7 +20,7 @@
 //             </div>
 //           </div>
 //           <p className="text-slate-400 text-sm leading-relaxed">
-//             The world's most accurate AI handwriting to text converter. Digitize your life effortlessly and securely.
+//             AI-powered handwriting and digital text conversion in both directions. Digitize notes or create handwritten pages effortlessly and securely.
 //           </p>
 //           <div className="flex gap-4 pt-2">
 //             <a href="#" className="text-slate-400 hover:text-white transition-colors"><Globe size={20} /></a>
@@ -108,7 +108,7 @@ export function Footer() {
               <span className="ml-3 text-xl font-bold text-white">HandyText</span>
             </div>
           <p className="text-slate-400 text-sm leading-relaxed">
-            The world's most accurate AI handwriting to text converter. Digitize your life effortlessly and securely.
+            AI-powered handwriting and digital text conversion in both directions. Digitize notes or create handwritten pages effortlessly and securely.
           </p>
           <div className="flex gap-4 pt-2">
             <a href="#" className="text-slate-400 hover:text-white transition-colors"><Globe size={20} /></a>

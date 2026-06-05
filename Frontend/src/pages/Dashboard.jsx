@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   ArrowRight, CheckCircle2, Zap, Shield, Image as ImageIcon,
   ChevronLeft, ChevronRight, Menu, X, Globe, MessageCircle, Mail, Quote, ArrowLeft, Loader2
@@ -8,7 +8,7 @@ import logo from '../assets/logo.png';
 import { Link as RouterLink } from 'react-router-dom';
 import { Link as ScrollLink } from 'react-scroll';
 import { TestimonialSlider } from '../components/TestimonialSlider';
-import { isLoggedIn, getLoggedInUser } from '../utils/auth';
+import { isLoggedIn } from '../utils/auth';
 import { api } from '../utils/api';
 import { useToast } from '../context/ToastContext';
 // ─── Testimonials data ────────────────────────────────────────────────────────
@@ -95,6 +95,18 @@ function StatsSection() {
 function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(() => isLoggedIn());
+
+  useEffect(() => {
+    const syncAuthState = () => setLoggedIn(isLoggedIn());
+
+    window.addEventListener('storage', syncAuthState);
+    window.addEventListener('focus', syncAuthState);
+    return () => {
+      window.removeEventListener('storage', syncAuthState);
+      window.removeEventListener('focus', syncAuthState);
+    };
+  }, []);
 
   const toggleMobileMenu = () => {
     if (isMobileMenuOpen) {
@@ -143,18 +155,29 @@ function Header() {
 
           {/* Desktop actions */}
           <div className="hidden lg:flex items-center gap-4">
-            <RouterLink
-              to="/login"
-              className="text-slate-600 font-medium hover:text-[#3461ff] transition-colors"
-            >
-              Sign In
-            </RouterLink>
-            <RouterLink
-              to="/register"
-              className="bg-[#3461ff] hover:bg-[#2b51d6] text-white px-5 py-2 rounded-lg font-medium transition-colors shadow-md shadow-[#3461ff]/20"
-            >
-              Get Started
-            </RouterLink>
+            {loggedIn ? (
+              <RouterLink
+                to="/convert"
+                className="bg-[#3461ff] hover:bg-[#2b51d6] text-white px-5 py-2 rounded-lg font-medium transition-colors shadow-md shadow-[#3461ff]/20"
+              >
+                Start Converting
+              </RouterLink>
+            ) : (
+              <>
+                <RouterLink
+                  to="/login"
+                  className="text-slate-600 font-medium hover:text-[#3461ff] transition-colors"
+                >
+                  Sign In
+                </RouterLink>
+                <RouterLink
+                  to="/register"
+                  className="bg-[#3461ff] hover:bg-[#2b51d6] text-white px-5 py-2 rounded-lg font-medium transition-colors shadow-md shadow-[#3461ff]/20"
+                >
+                  Get Started
+                </RouterLink>
+              </>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -189,11 +212,11 @@ function Header() {
             </ScrollLink>
           ))}
           <RouterLink
-            to="/login"
+            to={loggedIn ? '/convert' : '/login'}
             onClick={toggleMobileMenu}
             className="mt-6 bg-[#3461ff] hover:bg-[#2b51d6] text-white px-6 py-3 rounded-lg font-medium transition-colors shadow-md shadow-[#3461ff]/20 w-3/4 text-center"
           >
-            Login
+            {loggedIn ? 'Start Converting' : 'Login'}
           </RouterLink>
         </div>
       </div>
@@ -245,7 +268,7 @@ function HeroTypingTitle() {
 
   return (
     <>
-      Turn Handwriting into{' '}
+      Convert Handwriting and{' '}
       <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#3461ff] to-cyan-500">
         {gradientDisplayed}
       </span>
@@ -387,7 +410,7 @@ export function Dashboard() {
             </h1>
             
             <p className="text-lg text-slate-600 max-w-lg mx-auto lg:mx-0 leading-relaxed mt-6">
-              HandyText uses advanced AI models to seamlessly scan, recognize, and convert your handwritten notes, prescriptions, and whiteboards into editable digital formats with unmatched accuracy.
+              HandyText uses advanced AI models to convert handwritten notes into editable digital text and turn digital text back into realistic handwriting.
             </p>
             
             <ul className="space-y-3 pt-8 text-left inline-block lg:block">
@@ -396,6 +419,9 @@ export function Dashboard() {
               </li>
               <li className="flex items-center gap-3 text-slate-700 font-medium">
                 <CheckCircle2 className="text-emerald-500 flex-shrink-0" size={20} /> Export to Word, PDF, or Markdown
+              </li>
+              <li className="flex items-center gap-3 text-slate-700 font-medium">
+                <CheckCircle2 className="text-emerald-500 flex-shrink-0" size={20} /> Create realistic handwriting from typed text
               </li>
               <li className="flex items-center gap-3 text-slate-700 font-medium">
                 <CheckCircle2 className="text-emerald-500 flex-shrink-0" size={20} /> 100% secure and private processing
@@ -432,7 +458,7 @@ export function Dashboard() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
-              { icon: Zap, color: 'text-[#3461ff]', bg: 'bg-blue-50', title: 'Lightning Fast', desc: 'Convert entire pages of handwriting into editable text in a matter of seconds.' },
+              { icon: Zap, color: 'text-[#3461ff]', bg: 'bg-blue-50', title: 'Lightning Fast', desc: 'Convert handwriting to editable text or turn typed text into handwriting in seconds.' },
               { icon: Shield, color: 'text-emerald-500', bg: 'bg-emerald-50', title: 'Bank-level Security', desc: 'Your data is encrypted end-to-end. We never store your documents permanently.' },
               { icon: ImageIcon, color: 'text-purple-500', bg: 'bg-purple-50', title: 'Any Format Support', desc: 'Upload JPGs, PNGs, or PDFs. Export your digitized text directly to Word or Markdown.' }
             ].map((f, i) => (
@@ -640,12 +666,12 @@ export function Dashboard() {
                   src={logo} 
                   alt="HandyText" 
                   className="w-full h-full object-contain"
-                  style={{ filter: 'brightness(0) saturate(100%) invert(34%) sepia(85%) saturate(3015%) hue-rotate(216deg) brightness(90%) contrast(92%)' }}
+                  style={{ filter: 'brightness(0) invert(1)' }}
                 />
               </div>
             </div>
             <p className="text-slate-400 text-sm leading-relaxed">
-              The world's most accurate AI handwriting to text converter. Digitize your life effortlessly.
+              AI-powered handwriting and digital text conversion in both directions. Digitize notes or create realistic handwritten pages effortlessly.
             </p>
             <div className="flex gap-4 pt-2">
               <a href="#" className="text-slate-400 hover:text-white transition-colors"><Globe size={20} /></a>

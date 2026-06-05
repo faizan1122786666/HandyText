@@ -1,12 +1,25 @@
-import React, { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import logo from '../assets/logo.png';
 import { Link as RouterLink } from 'react-router-dom';
 import { Link as ScrollLink } from 'react-scroll';
+import { isLoggedIn } from '../utils/auth';
 
 export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(() => isLoggedIn());
+
+  useEffect(() => {
+    const syncAuthState = () => setLoggedIn(isLoggedIn());
+
+    window.addEventListener('storage', syncAuthState);
+    window.addEventListener('focus', syncAuthState);
+    return () => {
+      window.removeEventListener('storage', syncAuthState);
+      window.removeEventListener('focus', syncAuthState);
+    };
+  }, []);
 
   const toggleMobileMenu = () => {
     if (isMobileMenuOpen) {
@@ -65,18 +78,29 @@ export function Header() {
 
           {/* Desktop Actions */}
           <div className="hidden lg:flex items-center gap-4">
-            <RouterLink
-              to="/login"
-              className="text-slate-600 font-medium hover:text-[#4169e1] transition-colors"
-            >
-              Sign In
-            </RouterLink>
-            <RouterLink
-              to="/register"
-              className="bg-[#4169e1] hover:bg-[#3156c4] text-white px-5 py-2 rounded-lg font-medium transition-colors shadow-md shadow-[#4169e1]/20"
-            >
-              Get Started
-            </RouterLink>
+            {loggedIn ? (
+              <RouterLink
+                to="/convert"
+                className="bg-[#4169e1] hover:bg-[#3156c4] text-white px-5 py-2 rounded-lg font-medium transition-colors shadow-md shadow-[#4169e1]/20"
+              >
+                Start Converting
+              </RouterLink>
+            ) : (
+              <>
+                <RouterLink
+                  to="/login"
+                  className="text-slate-600 font-medium hover:text-[#4169e1] transition-colors"
+                >
+                  Sign In
+                </RouterLink>
+                <RouterLink
+                  to="/register"
+                  className="bg-[#4169e1] hover:bg-[#3156c4] text-white px-5 py-2 rounded-lg font-medium transition-colors shadow-md shadow-[#4169e1]/20"
+                >
+                  Get Started
+                </RouterLink>
+              </>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -126,11 +150,11 @@ export function Header() {
             Testimonials
           </ScrollLink>
           <RouterLink
-            to="/login"
+            to={loggedIn ? '/convert' : '/login'}
             onClick={toggleMobileMenu}
             className="mt-6 bg-[#4169e1] hover:bg-[#3156c4] text-white px-6 py-3 rounded-lg font-medium transition-colors shadow-md shadow-[#4169e1]/20 w-3/4 text-center"
           >
-            Login
+            {loggedIn ? 'Start Converting' : 'Login'}
           </RouterLink>
         </div>
       </div>

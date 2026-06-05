@@ -89,7 +89,7 @@ export function Register() {
            </div>
 
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Create an account</h2>
-          <p className="text-slate-500 mb-6 text-sm">Sign up to start converting handwriting to digital text.</p>
+          <p className="text-slate-500 mb-6 text-sm">Sign up to convert handwriting to digital text and digital text to handwriting.</p>
 
           {error && <div className="mb-4 p-3 bg-red-50 text-red-500 text-sm rounded-xl border border-red-100">{error}</div>}
 

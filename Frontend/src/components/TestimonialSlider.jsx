@@ -97,7 +97,7 @@ export function TestimonialSlider() {
               Loved by Professionals
             </h2>
             <p className="text-lg text-slate-600 mb-8">
-              See how HandyText is helping people across industries digitize their handwritten work.
+              See how HandyText is helping people digitize handwritten work and create realistic handwriting from digital text.
             </p>
           </div>
 

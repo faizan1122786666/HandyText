@@ -78,7 +78,7 @@ export function Login() {
            </div>
 
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Welcome Back!</h2>
-          <p className="text-slate-500 mb-6 text-sm">Login to continue converting your handwritten text into digital text.</p>
+          <p className="text-slate-500 mb-6 text-sm">Login to convert handwriting into digital text or digital text into handwriting.</p>
 
           {error && <div className="mb-4 p-3 bg-red-50 text-red-500 text-sm rounded-xl border border-red-100">{error}</div>}
 

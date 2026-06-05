@@ -1,4 +1,5 @@
 const AUTH_KEY = 'handytext_auth';
+const WORKSPACE_KEY = 'handytext-workspace';
 const SESSION_DURATION_MS = 30 * 60 * 1000;
 
 function clearExpiredSession(authData) {
@@ -16,6 +17,7 @@ function clearExpiredSession(authData) {
 }
 
 export function setLoggedIn(authData) {
+  localStorage.removeItem(WORKSPACE_KEY);
   localStorage.setItem(AUTH_KEY, JSON.stringify({
     ...authData,
     expires_at: Date.now() + SESSION_DURATION_MS,

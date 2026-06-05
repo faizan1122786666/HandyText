@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TbSend2 } from "react-icons/tb";
 import { 
+  ArrowLeft,
   ChevronRight, Sun, Bell, HelpCircle, ChevronDown, CheckCircle2, Settings, Download,
   FileImage, MoreHorizontal, ChevronLeft, ZoomIn, ZoomOut, Maximize, RotateCw, Crop, Wand2, Plus,
   FileText, Undo2, Redo2, RefreshCw, Keyboard, Code, Sparkles, Bold, Italic, Underline, Strikethrough, Highlighter,
@@ -1047,6 +1048,7 @@ export function UploadDashboard() {
         message: `Successfully processed ${currentPage.file?.name || 'image'}`,
         type: 'upload'
       });
+
     } catch (err) {
       const rawMessage = err?.message || 'OCR extraction failed. Please try again.';
       let friendlyMessage = rawMessage;
@@ -1287,12 +1289,22 @@ export function UploadDashboard() {
         {/* Top/Left Section: Breadcrumbs + Icons (Mobile) */}
         <div className="flex items-center justify-between w-full xl:w-auto">
           {/* Breadcrumbs */}
-          <div className="flex items-center text-[13px] font-medium text-slate-500">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              onClick={() => navigate('/convert')}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] font-semibold text-slate-600 hover:bg-slate-100 rounded-md transition-colors shrink-0"
+            >
+              <ArrowLeft size={16} /> Back
+            </button>
+            <div className="h-5 w-px bg-slate-200 hidden sm:block" />
+            <div className="flex items-center text-[13px] font-medium text-slate-500 min-w-0">
             <span>Recent Files</span>
             <ChevronRight size={14} className="mx-2 text-slate-300" />
             <span className="text-slate-800 font-bold truncate max-w-[140px] sm:max-w-none">
               {documentTitle}
             </span>
+            </div>
           </div>
           
           {/* Icons - Visible on Mobile Only (Top Right) */}
@@ -1650,17 +1662,28 @@ export function UploadDashboard() {
       </header>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col xl:flex-row gap-4 px-4 pb-4 overflow-y-auto xl:overflow-hidden">
+      <div className="flex-1 flex flex-col xl:flex-row gap-3 sm:gap-4 px-3 sm:px-4 pb-3 sm:pb-4 overflow-y-auto xl:overflow-hidden">
         
         {/* Column 1: Original Image */}
-        <div className="flex-1 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0 xl:min-w-[280px] min-h-[500px] xl:min-h-0">
+        <div className="flex-1 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0 xl:min-w-[280px] min-h-[420px] sm:min-h-[500px] xl:min-h-0">
           {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 shrink-0">
             <div className="flex items-center gap-1.5 text-[12px] font-bold text-slate-800">
               <FileImage size={17} className="text-slate-400" />
               Original ({pages.length > 0 ? activePage : 0}/{pages.length})
             </div>
-            <div className="relative flex items-center gap-1">
+            <div className="relative flex flex-wrap items-center justify-end gap-1">
+              {ocrData && !String(conversionId || '').startsWith('temp-') && (
+                <button
+                  type="button"
+                  onClick={handleOpenFullEditor}
+                  disabled={isProcessing}
+                  title="Open editor mode"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#3461ff]/30 bg-blue-50 text-[#3461ff] transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <SquarePen size={15} />
+                </button>
+              )}
               <button 
                 onClick={undoImageEdit}
                 disabled={!canUndoImage()}
@@ -1884,7 +1907,7 @@ export function UploadDashboard() {
           </div>
           
           {/* Thumbnails */}
-          <div className="flex items-center gap-2 p-3 border-t border-slate-100 shrink-0 bg-slate-50/50">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 p-2 sm:p-3 border-t border-slate-100 shrink-0 bg-slate-50/50">
             <div className="flex items-center gap-1 overflow-x-auto min-w-0 flex-1">
               {pages.map((page, index) => (
               <div 
@@ -1904,10 +1927,10 @@ export function UploadDashboard() {
               </div>
               ))}
             </div>
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 justify-end sm:justify-start">
               <button 
                 onClick={() => fileInputRef.current?.click()}
-                className="w-12 h-16 rounded-md border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-[#3461ff] hover:border-[#3461ff] hover:bg-blue-50 transition-colors flex-shrink-0"
+                className="h-10 w-full sm:w-12 sm:h-16 rounded-md border-2 border-dashed border-slate-300 flex flex-row sm:flex-col items-center justify-center gap-1 text-slate-400 hover:text-[#3461ff] hover:border-[#3461ff] hover:bg-blue-50 transition-colors flex-shrink-0"
               >
                 <Plus size={14} />
                 <span className="text-[8px] font-bold">Add</span>
@@ -1917,7 +1940,7 @@ export function UploadDashboard() {
                 onClick={handleExtractText}
                 disabled={!currentPage || Boolean(currentPage.ocrData) || processingPages.has(currentPage.id)}
                 title="Extract text from current page"
-                className="group w-9 h-16 rounded-md flex items-center justify-center text-slate-400 bg-transparent hover:bg-blue-50 hover:text-[#3461ff] transition-colors flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                className="group h-10 w-12 sm:w-9 sm:h-16 rounded-md flex items-center justify-center text-slate-400 bg-transparent hover:bg-blue-50 hover:text-[#3461ff] transition-colors flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
               >
                 {processingPages.has(currentPage?.id) ? (
                   <div className="w-5 h-5 border-2 border-[#3461ff] border-t-transparent rounded-full animate-spin" />
@@ -1931,6 +1954,8 @@ export function UploadDashboard() {
           </div>
         </div>
 
+        {false && (
+        <>
         {/* Column 2: Extracted Text */}
         <div className="flex-[1.2] flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0 xl:min-w-[300px] relative min-h-[500px] xl:min-h-0">
           {/* Header */}
@@ -2350,6 +2375,8 @@ export function UploadDashboard() {
             )}
           </div>
         </div>
+        </>
+        )}
 
       </div>
     </div>

@@ -10,6 +10,7 @@ class Conversion(Document):
     extracted_text: Optional[str] = None
     edited_text: Optional[str] = None
     edited_html: Optional[str] = None
+    page_border: bool = True
     word_count: int = 0
     char_count: int = 0
     confidence_score: float = 0.0

@@ -28,12 +28,12 @@ export function NotificationProvider({ children }) {
   }, []);
 
   return (
-    <NotificationContext.Provider value={{ 
-      notifications, 
-      unreadCount, 
-      addNotification, 
-      markAllAsRead, 
-      clearNotifications 
+    <NotificationContext.Provider value={{
+      notifications,
+      unreadCount,
+      addNotification,
+      markAllAsRead,
+      clearNotifications
     }}>
       {children}
     </NotificationContext.Provider>

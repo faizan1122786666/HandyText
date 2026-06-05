@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Save, Bold, Italic, Underline, Strikethrough, Highlighter,
   AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered,
-  Undo2, Redo2, RemoveFormatting, Loader2, Check, Wand2, X, Rows3,
+  Undo2, Redo2, RemoveFormatting, Loader2, Check, Wand2, X, Rows3, Square,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../context/ToastContext';
@@ -51,6 +51,7 @@ export function DocumentEditor() {
   const [suggestions, setSuggestions] = useState([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [documentHtml, setDocumentHtml] = useState('');
+  const [pageBorder, setPageBorder] = useState(true);
 
   const updateStats = useCallback(() => {
     const text = editorRef.current?.innerText || '';
@@ -112,6 +113,7 @@ export function DocumentEditor() {
         const data = await api.get(`/upload/conversion/${id}`);
         if (cancelled) return;
         setTitle(data.original_filename || 'Document');
+        setPageBorder(data.page_border !== false);
         const html = data.edited_html?.trim()
           ? data.edited_html
           : plainToHtml(data.edited_text || data.extracted_text || '');
@@ -182,6 +184,21 @@ export function DocumentEditor() {
     document.execCommand('insertHTML', false, '<hr style="border:0;border-top:2px solid #1f2937;margin:12px 0;" />');
     updateStats();
     scheduleSave();
+  };
+
+  // Toggle the page border (box around the page). Persisted immediately so the
+  // PDF/DOCX export uses the same setting.
+  const togglePageBorder = () => {
+    const next = !pageBorder;
+    setPageBorder(next);
+    if (editorRef.current) {
+      api.post(`/export/${id}/save-edited`, {
+        edited_text: editorRef.current.innerText,
+        edited_html: editorRef.current.innerHTML,
+        page_border: next,
+      }).catch(() => { /* non-blocking */ });
+    }
+    addToast(next ? 'Page border enabled' : 'Page border removed', 'success');
   };
 
   const acceptSuggestion = (suggestion) => {
@@ -356,6 +373,7 @@ export function DocumentEditor() {
         <Divider />
 
         <ToolbarButton onClick={insertLine} title="Insert border line" icon={Rows3} />
+        <ToolbarButton onClick={togglePageBorder} title={pageBorder ? 'Remove page border' : 'Add page border'} icon={Square} isActive={pageBorder} />
         <Divider />
 
         <ToolbarButton onClick={() => exec('removeFormat')} title="Clear formatting" icon={RemoveFormatting} />
@@ -370,24 +388,40 @@ export function DocumentEditor() {
             </div>
           ) : (
             <div
-              ref={editorRef}
-              contentEditable
-              suppressContentEditableWarning
-              dir="auto"
-              onInput={() => { updateStats(); scheduleSave(); }}
-              onKeyUp={refreshActive}
-              onMouseUp={refreshActive}
-              spellCheck={false}
-              className="mx-auto bg-white shadow-md rounded-sm outline-none text-slate-900 leading-relaxed"
-              style={{
-                width: '210mm',
-                maxWidth: '100%',
-                minHeight: '297mm',
-                padding: 'clamp(18px, 5vw, 25mm)',
-                fontFamily,
-                fontSize: `${fontSize}px`,
-              }}
-            />
+              className="relative mx-auto bg-white shadow-md rounded-sm"
+              style={{ width: '210mm', maxWidth: '100%', minHeight: '297mm' }}
+            >
+              {/* Assignment-style border: a rectangle inset from the page edges
+                  with connected corners (no corner gaps). pointer-events-none
+                  keeps the editor fully clickable underneath. */}
+              {pageBorder && (
+                <div
+                  className="pointer-events-none absolute z-10 border-2 border-slate-800"
+                  style={{ inset: 'clamp(12px, 2.5vw, 20px)' }}
+                />
+              )}
+              <div
+                ref={editorRef}
+                contentEditable
+                suppressContentEditableWarning
+                dir="auto"
+                onInput={() => { updateStats(); scheduleSave(); }}
+                onKeyUp={refreshActive}
+                onMouseUp={refreshActive}
+                spellCheck={false}
+                className="outline-none text-slate-900 leading-relaxed"
+                style={{
+                  minHeight: '297mm',
+                  padding: 'clamp(18px, 5vw, 25mm)',
+                  fontFamily,
+                  fontSize: `${fontSize}px`,
+                  // Preserve the OCR layout: keep leading indentation and the
+                  // inter-word spacing the layout engine produced, while still
+                  // wrapping long lines like a normal document.
+                  whiteSpace: 'pre-wrap',
+                }}
+              />
+            </div>
           )}
         </div>
 

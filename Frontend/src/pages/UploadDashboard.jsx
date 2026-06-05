@@ -35,8 +35,6 @@ const formatFileSize = (bytes) => {
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
-const URDU_TEXT_REGEX = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
-const URDU_LANGUAGE = { code: 'ur', label: 'Urdu', dir: 'rtl' };
 
 const getExtension = (filename = '') => {
   const dotIndex = filename.lastIndexOf('.');
@@ -167,10 +165,10 @@ export function UploadDashboard() {
   const [pages, setPages] = useState(() => loadWorkspace()?.pages || []); // Array of { id, image, ocrData }
   const [aiSuggestion, setAiSuggestion] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState({ code: 'en', label: 'English (Auto)', dir: 'ltr' });
-  
+
   // Notification Dropdown State
   const [showNotifications, setShowNotifications] = useState(false);
-  
+
   // Image Viewer State
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -1041,13 +1039,20 @@ export function UploadDashboard() {
       setShowAllSuggestions(false);
       setActiveSuggestionId(null);
       addToast(currentPage.ocrData ? 'OCR re-extraction complete!' : 'OCR processing complete!', 'success');
-      
+
       // Add notification
       addNotification({
         title: 'Text Extracted',
         message: `Successfully processed ${currentPage.file?.name || 'image'}`,
         type: 'upload'
       });
+
+      // Jump straight to the full-page editor showing the freshly extracted,
+      // formatted content. The backend has already saved `edited_html` for this
+      // conversion, so the editor loads it with the original layout/alignment.
+      if (data.id) {
+        navigate(`/document/${data.id}/edit`);
+      }
 
     } catch (err) {
       const rawMessage = err?.message || 'OCR extraction failed. Please try again.';
@@ -1339,8 +1344,7 @@ export function UploadDashboard() {
             {showLangMenu && (
               <div className="absolute left-0 top-full mt-1 w-40 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50 max-h-60 overflow-y-auto">
                 {[
-                  { code: 'en', label: 'English (Auto)', dir: 'ltr' },
-                  { code: 'ur', label: 'Urdu', dir: 'rtl' }
+                  { code: 'en', label: 'English (Auto)', dir: 'ltr' }
                 ].map((lang) => (
                   <button 
                     key={lang.code}
@@ -1503,15 +1507,14 @@ export function UploadDashboard() {
                   {/* Language Models Settings */}
                   {activeSettingsPanel === 'language' && (
                     <div className="space-y-3">
-                      <p className="text-sm text-slate-500">Currently using EasyOCR with English and Urdu support!</p>
+                      <p className="text-sm text-slate-500">Currently using EasyOCR with English support!</p>
                       <div className="flex flex-wrap gap-2">
                         {[
-                          { code: 'en', label: 'English' },
-                          { code: 'ur', label: 'Urdu' }
+                          { code: 'en', label: 'English' }
                         ].map(lang => (
-                          <button 
+                          <button
                             key={lang.code}
-                            onClick={() => setSelectedLanguage({ code: lang.code, label: lang.code === 'en' ? 'English (Auto)' : 'Urdu', dir: lang.code === 'ur' ? 'rtl' : 'ltr' })}
+                            onClick={() => setSelectedLanguage({ code: lang.code, label: 'English (Auto)', dir: 'ltr' })}
                             className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${selectedLanguage.code === lang.code ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
                           >
                             {lang.label}
@@ -1573,10 +1576,10 @@ export function UploadDashboard() {
         <div className="hidden xl:flex items-center gap-4 text-slate-500 xl:w-auto xl:pl-0">
           <div className="flex items-center gap-3 border-r border-slate-200 pr-4">
             <button className="hover:text-slate-800 transition-colors"><Sun size={18} /></button>
-            
+
             {/* Notifications (Bell Icon) */}
             <div className="relative">
-              <button 
+              <button
                 onClick={() => {
                   setShowNotifications(!showNotifications);
                   if (!showNotifications) markAllAsRead();
@@ -1590,14 +1593,14 @@ export function UploadDashboard() {
                   {unreadCount}
                 </span>
               )}
-              
+
               {/* Notification Dropdown */}
               {showNotifications && (
                 <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-[100] animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="px-4 py-2 border-b border-slate-50 flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Notifications</span>
                     {notifications.length > 0 && (
-                      <button 
+                      <button
                         onClick={(e) => { e.stopPropagation(); clearNotifications(); }}
                         className="text-[10px] text-slate-400 hover:text-red-500 font-bold"
                       >
@@ -1655,7 +1658,7 @@ export function UploadDashboard() {
                 </div>
               )}
             </div>
-            
+
             <HelpIconButton />
           </div>
         </div>
@@ -2047,7 +2050,7 @@ export function UploadDashboard() {
               dir={selectedLanguage.dir}
               className={cn(
                 "absolute inset-0 p-6 overflow-y-auto leading-[1.25] text-slate-800 outline-none whitespace-pre-wrap break-words",
-                selectedLanguage.code === 'ur' ? "font-['Jameel_Noori_Nastaleeq',_Tahoma,_Arial] text-xl" : "font-sans text-[13px]",
+                "font-sans text-[13px]",
                 "[&_div]:min-h-[1.05em] [&_div]:mb-0 [&_.ocr-blank-line]:min-h-[0.25em]",
                 isProcessing && "pointer-events-none text-transparent"
               )}

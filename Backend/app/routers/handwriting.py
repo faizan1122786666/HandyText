@@ -23,6 +23,7 @@ async def generate(
     font: str = Form(hw.DEFAULT_FONT),
     font_size: int = Form(44),
     ink_color: str = Form("#22356f"),
+    page_type: str = Form("a4"),
     fmt: str = Form("png"),
     file: Optional[UploadFile] = File(None),
 ):
@@ -38,6 +39,7 @@ async def generate(
             font_size=font_size,
             ink_color=ink_color,
             background_bytes=background_bytes,
+            page_type=page_type,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Could not generate handwriting: {exc}")

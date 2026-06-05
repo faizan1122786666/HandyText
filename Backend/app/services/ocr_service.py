@@ -1,5 +1,5 @@
 """
-OCR service: EasyOCR (primary) + Tesseract (fallback) for English, Urdu, and handwriting.
+OCR service: EasyOCR (primary) + Tesseract (fallback) for English and handwriting.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from .ocr_layout import layout_text_from_detections, low_confidence_spans
 
 logger = logging.getLogger(__name__)
 
-LanguageCode = Literal["en", "ur"]
+LanguageCode = Literal["en"]
 
 _TESSERACT_PATH = resolve_tesseract_cmd(settings.TESSERACT_CMD)
 if _TESSERACT_PATH:
@@ -39,8 +39,8 @@ if os.name == "nt":
 readers = {}
 _easyocr_module = None
 
-SUPPORTED_LANGUAGES = ("en", "ur")
-TESS_LANG_MAP = {"en": "eng", "ur": "urd+eng"}
+SUPPORTED_LANGUAGES = ("en",)
+TESS_LANG_MAP = {"en": "eng"}
 
 
 def _get_easyocr():
@@ -68,7 +68,7 @@ def get_reader(lang_code: str):
     if not easyocr:
         return None
 
-    langs = ["ur", "en"] if lang_code == "ur" else ["en"]
+    langs = ["en"]
     cache_key = "-".join(sorted(langs))
 
     if cache_key not in readers:
@@ -92,11 +92,7 @@ def run_tesseract(image_path: str, lang_code: str) -> dict:
 
     lang_code = normalize_language(lang_code)
     tess_lang = TESS_LANG_MAP.get(lang_code, "eng")
-    config = (
-        "--psm 3 -c preserve_interword_spaces=1"
-        if lang_code == "ur"
-        else "--psm 6 -c preserve_interword_spaces=1"
-    )
+    config = "--psm 6 -c preserve_interword_spaces=1"
 
     try:
         data = pytesseract.image_to_data(
@@ -170,14 +166,18 @@ def _run_gemini_vision_ocr(image_path: str, lang_code: str) -> Optional[dict]:
         if not api_key:
             return None
 
-        language_hint = "Urdu and English" if lang_code == "ur" else "English"
-        prompt = f"""Extract the visible text from this image exactly as it appears.
+        language_hint = "English"
+        prompt = f"""Extract the visible text from this image.
 
 Rules:
-- Preserve the document layout as plain text.
-- Keep the same line breaks, blank lines, headings, indentation, punctuation, numbers, and casing.
-- If this is a letter, keep the address/date/greeting/body/closing/signature on separate lines like the original.
-- Use only {language_hint} text. Do not insert Urdu or Arabic-script characters unless the selected language is Urdu and they are visible in the image.
+- Reconstruct the text into clean, flowing paragraphs. When a sentence simply wraps to the next handwritten line, JOIN those lines into one continuous line — do NOT keep the wrap-induced line breaks.
+- Start a new line ONLY for a genuinely new paragraph, a heading/title, or a list item.
+- Separate distinct paragraphs with a single blank line so each paragraph reads left-to-right across the full width.
+- Keep every heading or title on its own line.
+- Keep each bullet point or numbered list item on its own line (preserve its • or number marker).
+- If this is a letter, keep the address, date, greeting, each body paragraph, closing, and signature as their own lines/paragraphs.
+- Preserve the original wording, punctuation, numbers, and casing — only remove the artificial mid-paragraph line breaks.
+- Use only {language_hint} text. Do not insert non-Latin or right-to-left script characters.
 - Correct obvious OCR-style character mistakes while keeping the original words and meaning.
 - Detect lines or phrases that are visibly written with marker, darker/thicker ink, bold handwriting, highlighted emphasis, or heading/title styling.
 - If a heading/title is visually darker, larger, underlined, centered, or written with marker, include that full heading line in bold_lines.
@@ -185,7 +185,7 @@ Rules:
 - If a word is unclear, make the closest readable transcription.
 - Return only valid JSON with this shape:
 {{
-  "text": "layout-preserving extracted text",
+  "text": "extracted text reflowed into paragraphs (wrapped lines joined, real paragraphs separated by a blank line)",
   "bold_lines": ["exact full heading/marker/darker lines that should be bold"],
   "bold_phrases": ["exact marker/darker phrases that should be bold"]
 }}

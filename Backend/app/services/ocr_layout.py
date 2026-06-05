@@ -1,5 +1,78 @@
 """Rebuild OCR detections into multi-line text that matches document layout."""
+import re
 from typing import List, Tuple, Any
+
+# Lines that should always start their own block (never merged into a paragraph).
+_BLOCK_START_RE = re.compile(r'^\s*([•‣◦⁃·•\-\*]|\d+[.)])\s+')
+
+# A line ending with one of these is treated as a finished sentence/label, so the
+# next line begins a new paragraph instead of being merged in. '_' is included
+# because OCR commonly misreads a sentence-ending '.' as '_'.
+_TERMINAL_PUNCT = ('.', '!', '?', ':', ';', '_')
+
+
+def reflow_paragraphs(text: str) -> str:
+    """Join wrap-induced line breaks into flowing paragraphs.
+
+    OCR engines emit one hard line break per visual line, which leaves a
+    paragraph chopped into a narrow column. This rebuilds flowing paragraphs that
+    fill the page left-to-right. Rules:
+      - A blank line is a real paragraph break and is kept.
+      - A list item (bullet/number) stays on its own line.
+      - A short heading/label line keeps the following text on a new line.
+      - A line that ends a sentence/label (terminal punctuation) starts a new line.
+      - A line ending mid-sentence is merged with the next line (soft wrap).
+      - A line ending with '-' joins the next without a space (hyphenated word).
+    """
+    if not text:
+        return text
+
+    lines = text.replace('\r\n', '\n').split('\n')
+
+    # Typical line length (of normal body lines) used to spot short heading lines.
+    body_lengths = sorted(
+        len(s) for s in (ln.strip() for ln in lines)
+        if s and not _BLOCK_START_RE.match(s)
+    )
+    median_len = body_lengths[len(body_lengths) // 2] if body_lengths else 0
+    short_threshold = max(median_len * 0.5, 14)
+
+    def is_headingish(line: str) -> bool:
+        # Short line that does not finish a sentence -> likely a heading/title.
+        return len(line) <= short_threshold and not line.endswith(_TERMINAL_PUNCT)
+
+    out: List[str] = []
+    for raw in lines:
+        stripped = raw.strip()
+
+        if not stripped:
+            if out and out[-1] != '':
+                out.append('')  # keep a single blank line between paragraphs
+            continue
+
+        is_block = bool(_BLOCK_START_RE.match(stripped))
+
+        # Start a fresh line after a blank, at the very start, or for a list item.
+        if not out or out[-1] == '' or is_block:
+            out.append(stripped)
+            continue
+
+        prev = out[-1]
+        prev_is_block = bool(_BLOCK_START_RE.match(prev))
+
+        if prev.endswith(_TERMINAL_PUNCT):
+            out.append(stripped)             # previous sentence/label ended here
+        elif not prev_is_block and is_headingish(prev):
+            out.append(stripped)             # previous line is a short heading/title
+        elif prev.endswith('-'):
+            out[-1] = prev + stripped        # hyphenated word split across lines
+        else:
+            out[-1] = prev + ' ' + stripped  # soft-wrapped continuation
+
+    while out and out[-1] == '':
+        out.pop()
+
+    return '\n'.join(out)
 
 
 def _bbox_metrics(bbox) -> tuple:
@@ -21,7 +94,6 @@ def layout_text_from_detections(
     Group EasyOCR boxes into lines (by Y position) and paragraphs (by vertical gaps).
     Words on the same line are joined with spaces; lines with \n; larger gaps get a blank line.
     Attempts to preserve horizontal spacing (useful for letters/forms).
-    Handles Urdu (RTL).
     """
     items = []
     for bbox, text, prob in results:
@@ -66,51 +138,27 @@ def layout_text_from_detections(
             current = [item]
     line_groups.append(current)
 
+    # Emit one line per visual text row, with a blank line where there is a clear
+    # vertical gap (a paragraph/section break). Merging wrapped lines back into
+    # flowing paragraphs is done separately by reflow_paragraphs(), which works
+    # for every OCR engine (not just ones that return box geometry).
     output_lines: List[str] = []
     prev_bottom = None
-    is_rtl = lang_code == 'ur'
-
     for group in line_groups:
-        if is_rtl:
-            # For RTL, sort from right to left
-            group.sort(key=lambda i: -i["left"])
-        else:
-            group.sort(key=lambda i: i["left"])
-        
+        group.sort(key=lambda i: i["left"])
+
         top = min(i["cy"] - i["h"] / 2 for i in group)
         bottom = max(i["cy"] + i["h"] / 2 for i in group)
 
-        if prev_bottom is not None:
-            gap = top - prev_bottom
-            if gap > avg_height * paragraph_gap_factor:
-                output_lines.append("")
+        if prev_bottom is not None and (top - prev_bottom) > avg_height * paragraph_gap_factor:
+            output_lines.append("")
 
-        # Join words with appropriate spacing
-        line_text = ""
-        last_right = None
-        
-        # Handle initial indentation (if any)
-        min_left = min(i["left"] for i in items)
-        if not is_rtl and group[0]["left"] - min_left > avg_char_width * 4:
-            num_spaces = int((group[0]["left"] - min_left) / avg_char_width)
-            line_text += " " * num_spaces
+        line_text = " ".join(i["text"] for i in group).strip()
+        if line_text:
+            output_lines.append(line_text)
+            prev_bottom = bottom
 
-        for item in group:
-            if last_right is not None:
-                gap = abs(item["left"] - last_right)
-                if gap > avg_char_width * 1.5:
-                    num_spaces = max(1, int(gap / avg_char_width))
-                    line_text += " " * num_spaces
-                else:
-                    line_text += " "
-            
-            line_text += item["text"]
-            last_right = item["right"]
-
-        output_lines.append(line_text)
-        prev_bottom = bottom
-
-    return "\n".join(output_lines)
+    return reflow_paragraphs("\n".join(output_lines))
 
 
 def low_confidence_spans(

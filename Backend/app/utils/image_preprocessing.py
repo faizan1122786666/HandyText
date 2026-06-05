@@ -121,14 +121,13 @@ def preprocess_for_ocr(
 ) -> str:
     """
     Preprocess an image file for OCR. Returns path to processed image (or original if enhance=False).
-    Urdu uses lighter preprocessing to preserve script details.
     """
     if not enhance:
         return file_path
 
     try:
         image = load_image_bgr(file_path)
-        light_mode = lang_code == "ur"
+        light_mode = False
         processed = preprocess_image_array(
             image,
             grayscale=True,

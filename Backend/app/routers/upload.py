@@ -10,6 +10,7 @@ from ..schemas.conversion import ConversionOut, ConversionRename
 from ..utils.auth import get_current_user, get_optional_current_user
 from ..utils.file_validator import validate_file
 from ..services.ocr_service import run_ocr
+from ..services.ocr_layout import reflow_paragraphs
 from ..services.image_service import preprocess_image
 from ..services.cloudinary_service import upload_image
 from ..config import settings
@@ -32,6 +33,12 @@ def build_formatted_ocr_html(ocr_result: dict) -> Optional[str]:
     text = (ocr_result.get("text") or "").strip("\n")
     if not text:
         return None
+
+    # EasyOCR text is already reflowed into paragraphs using box geometry. For
+    # engines that return text directly (Gemini Vision / Tesseract) the lines are
+    # hard-wrapped, so reflow them into paragraphs here.
+    if ocr_result.get("engine") != "EasyOCR":
+        text = reflow_paragraphs(text)
 
     bold_lines = {line.strip() for line in ocr_result.get("bold_lines", []) if str(line).strip()}
     bold_phrases = [phrase.strip() for phrase in ocr_result.get("bold_phrases", []) if str(phrase).strip()]
@@ -124,9 +131,15 @@ async def convert_image(
             if original_result["text"].strip():
                 ocr_result = original_result
 
-        # Update record
+        # Update record. Keep the raw extraction, but store reflowed paragraphs as
+        # the editable text so the editor and exports read left-to-right.
+        flowed_text = (
+            ocr_result["text"]
+            if ocr_result.get("engine") == "EasyOCR"
+            else reflow_paragraphs(ocr_result["text"])
+        )
         conversion.extracted_text = ocr_result["text"]
-        conversion.edited_text = ocr_result["text"]
+        conversion.edited_text = flowed_text
         conversion.edited_html = build_formatted_ocr_html(ocr_result)
         conversion.word_count = ocr_result["word_count"]
         conversion.char_count = ocr_result["char_count"]

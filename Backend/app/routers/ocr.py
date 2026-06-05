@@ -1,5 +1,5 @@
 """
-POST /api/ocr — standalone OCR for images and PDFs (English, Urdu, handwriting).
+POST /api/ocr — standalone OCR for images and PDFs (English, handwriting).
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/ocr", tags=["OCR"])
 @router.post("", response_model=OCRResponse)
 async def extract_text(
     file: UploadFile = File(..., description="JPG, JPEG, PNG, or PDF"),
-    language: str = Form("en", description="Language code: en or ur"),
+    language: str = Form("en", description="Language code: en"),
     handwriting: bool = Form(True, description="Optimize for handwritten text"),
     preprocess: bool = Form(True, description="Apply OpenCV preprocessing"),
     confidence_threshold: float = Form(0.65, ge=0.0, le=1.0),
@@ -29,7 +29,7 @@ async def extract_text(
     Extract text from an uploaded image or PDF.
 
     Returns:
-        { "success": true, "text": "...", "language": "en|ur", "confidence": 0.95 }
+        { "success": true, "text": "...", "language": "en", "confidence": 0.95 }
     """
     lang = normalize_language(language)
     temp_paths: List[str] = []

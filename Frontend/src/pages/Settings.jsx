@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { User, Key, Trash2 } from 'lucide-react';
+import { User, Key, Trash2, Sparkles } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { ProfileForm } from '../components/ProfileForm';
 import { ChangePasswordForm } from '../components/ChangePasswordForm';
 import { DeleteAccountForm } from '../components/DeleteAccountForm';
+import { ApiKeyForm } from '../components/ApiKeyForm';
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState('profile');
@@ -41,7 +42,19 @@ export function Settings() {
           <Key size={16} />
           Password
         </button>
-        <button 
+        <button
+          onClick={() => setActiveTab('apikey')}
+          className={cn(
+            "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all",
+            activeTab === 'apikey'
+              ? "bg-blue-50 text-[#3461ff] shadow-sm"
+              : "text-slate-500 hover:text-slate-900"
+          )}
+        >
+          <Sparkles size={16} />
+          API Key
+        </button>
+        <button
           onClick={() => setActiveTab('delete')}
           className={cn(
             "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all",
@@ -82,7 +95,19 @@ export function Settings() {
             <Key size={16} />
             Change Password
           </button>
-          <button 
+          <button
+            onClick={() => setActiveTab('apikey')}
+            className={cn(
+              "flex items-center gap-2.5 px-3.5 py-2 rounded-xl transition-all font-bold",
+              activeTab === 'apikey'
+                ? "bg-white border border-slate-200 text-[#3461ff] shadow-sm"
+                : "text-slate-500 hover:bg-white hover:text-slate-900"
+            )}
+          >
+            <Sparkles size={16} />
+            API Key
+          </button>
+          <button
             onClick={() => setActiveTab('delete')}
             className={cn(
               "flex items-center gap-2.5 px-3.5 py-2 rounded-xl transition-all font-bold",
@@ -102,6 +127,8 @@ export function Settings() {
             <ProfileForm />
           ) : activeTab === 'password' ? (
             <ChangePasswordForm />
+          ) : activeTab === 'apikey' ? (
+            <ApiKeyForm />
           ) : (
             <DeleteAccountForm />
           )}

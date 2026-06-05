@@ -20,9 +20,9 @@ import re
 from xml.sax.saxutils import escape
 
 
-# --- Arabic / Urdu (RTL) script support ---------------------------------------
+# --- Right-to-left (Arabic-script) support ------------------------------------
 # reportlab's built-in fonts (Times-Roman, etc.) contain no Arabic glyphs, so
-# Urdu text renders as empty boxes. We bundle a Unicode font with Arabic glyphs
+# RTL text renders as empty boxes. We bundle a Unicode font with Arabic glyphs
 # and reshape + reorder the text ourselves because reportlab has no shaping or
 # bidirectional layout engine.
 _FONT_DIR = os.path.join(os.path.dirname(__file__), "..", "assets", "fonts")
@@ -64,7 +64,7 @@ def _has_arabic(text: str) -> bool:
 
 
 def _shape_rtl(text: str) -> str:
-    """Connect Arabic/Urdu letters into their contextual forms and apply
+    """Connect Arabic-script letters into their contextual forms and apply
     bidirectional reordering so the (shaping-less) PDF renderer lays them out
     correctly."""
     return get_display(arabic_reshaper.reshape(text))
@@ -240,7 +240,7 @@ def _reflow_plain_text(text: str) -> list[str]:
 def _set_paragraph_rtl(paragraph):
     """Mark a Word paragraph as right-to-left and justified (fill width). Word
     performs its own Arabic shaping, so this is all that's needed for correct
-    Urdu."""
+    RTL text."""
     pPr = paragraph._p.get_or_add_pPr()
     bidi = OxmlElement('w:bidi')
     bidi.set(qn('w:val'), '1')
@@ -321,12 +321,17 @@ def parse_html_to_docx(html_content: str, doc: Document):
             # Justify body text so each line fills the full width.
             paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
 
-def generate_docx(html_content: str, plain_text: str, filename: str) -> str:
+def generate_docx(html_content: str, plain_text: str, filename: str, page_border: bool = True) -> str:
     """Generate a .docx file and return its path."""
     file_path = f"exports/{uuid.uuid4()}_{_safe_export_name(filename)}.docx"
     os.makedirs("exports", exist_ok=True)
     doc = Document()
-    
+
+    # Document title metadata so viewers show the user's name, not "(anonymous)".
+    doc_title = _safe_export_name(os.path.splitext(os.path.basename(filename or "document"))[0])
+    doc.core_properties.title = doc_title
+    doc.core_properties.author = "HandyText"
+
     # Set page size to A4 (210mm x 297mm)
     section = doc.sections[0]
     section.page_height = Mm(297)
@@ -351,9 +356,10 @@ def generate_docx(html_content: str, plain_text: str, filename: str) -> str:
             pgBorders.append(bd)
         
         p.append(pgBorders)
-    
-    set_page_border(section)
-    
+
+    if page_border:
+        set_page_border(section)
+
     # Set default font
     style = doc.styles['Normal']
     font = style.font
@@ -438,18 +444,23 @@ def _html_to_reportlab_markup(html_content: str) -> list[tuple[str, str]]:
         paragraphs.append((markup or "&nbsp;", plain))
     return paragraphs
 
-def generate_pdf(html_content: str, plain_text: str, filename: str) -> str:
+def generate_pdf(html_content: str, plain_text: str, filename: str, page_border: bool = True) -> str:
     """Generate a .pdf file and return its path."""
     file_path = f"exports/{uuid.uuid4()}_{_safe_export_name(filename)}.pdf"
     os.makedirs("exports", exist_ok=True)
-    
+
+    # Document title metadata so PDF viewers show the user's name, not "(anonymous)".
+    doc_title = _safe_export_name(os.path.splitext(os.path.basename(filename or "document"))[0])
+
     doc = SimpleDocTemplate(
-        file_path, 
-        pagesize=A4, 
-        leftMargin=1*inch, 
+        file_path,
+        pagesize=A4,
+        leftMargin=1*inch,
         rightMargin=1*inch,
-        topMargin=1*inch, 
-        bottomMargin=1*inch
+        topMargin=1*inch,
+        bottomMargin=1*inch,
+        title=doc_title,
+        author="HandyText",
     )
     
     styles = getSampleStyleSheet()
@@ -483,9 +494,9 @@ def generate_pdf(html_content: str, plain_text: str, filename: str) -> str:
         spaceAfter=4,
     )
 
-    # Smart fill-width for Urdu / Arabic lines: lines long enough to wrap are
-    # justified (fill width); short single lines stay at the right margin
-    # (natural Urdu), avoiding the gappy look of stretching a short line.
+    # Smart fill-width for RTL / Arabic-script lines: lines long enough to wrap
+    # are justified (fill width); short single lines stay at the right margin
+    # (natural RTL), avoiding the gappy look of stretching a short line.
     arabic_font = ARABIC_FONT_NAME if arabic_ok else 'Times-Roman'
     # Last/short physical line of a paragraph: sit at the right margin.
     arabic_right = ParagraphStyle(
@@ -532,23 +543,19 @@ def generate_pdf(html_content: str, plain_text: str, filename: str) -> str:
             else:
                 story.append(Paragraph(markup, normal_style))
 
-    # Custom page template with border
+    # Custom page template with an optional border: a rectangle inset from the
+    # page edge with connected corners (matches the editor view).
     def on_page(canvas, doc):
+        if not page_border:
+            return
         canvas.saveState()
         canvas.setStrokeColorRGB(0, 0, 0)
         canvas.setLineWidth(2)
-        border_margin = 0.5 * inch
+        m = 0.5 * inch       # inset margin from the page edge
         page_width, page_height = A4
-        canvas.rect(
-            border_margin, 
-            border_margin, 
-            page_width - 2 * border_margin, 
-            page_height - 2 * border_margin, 
-            stroke=1, 
-            fill=0
-        )
+        canvas.rect(m, m, page_width - 2 * m, page_height - 2 * m, stroke=1, fill=0)
         canvas.restoreState()
-    
+
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     
     return file_path

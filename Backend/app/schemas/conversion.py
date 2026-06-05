@@ -18,6 +18,7 @@ class ConversionOut(ConversionBase):
     extracted_text: Optional[str]
     edited_text: Optional[str] = None
     edited_html: Optional[str] = None
+    page_border: bool = True
     word_count: int
     char_count: int
     confidence_score: float

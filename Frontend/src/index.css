@@ -8,6 +8,18 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Toast auto-dismiss countdown bar */
+@keyframes toast-progress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+.toast-progress-bar {
+  transform-origin: left;
+  animation-name: toast-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
 /* OCR / grammar error highlights in extracted text editor */
 .ocr-error {
   text-decoration: underline;

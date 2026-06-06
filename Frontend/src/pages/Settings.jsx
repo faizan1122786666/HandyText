@@ -52,7 +52,7 @@ export function Settings() {
           )}
         >
           <Sparkles size={16} />
-          API Key
+          AI Models
         </button>
         <button
           onClick={() => setActiveTab('delete')}
@@ -105,7 +105,7 @@ export function Settings() {
             )}
           >
             <Sparkles size={16} />
-            API Key
+            AI Models
           </button>
           <button
             onClick={() => setActiveTab('delete')}

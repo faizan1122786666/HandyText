@@ -1,44 +1,83 @@
-"""User-configurable settings — currently the personal Gemini API key.
+"""User-configurable AI settings — selected model and per-provider API keys.
 
-The key is written to AI/gemini_key.txt, which ai_service.get_gemini_api_key()
-already reads (and which takes precedence over the .env GEMINI_API_KEY). Reads
-happen per request, so a newly saved key takes effect immediately — no restart.
+Keys and the chosen model are stored in AI/ai_config.json (see ai_providers).
+The legacy AI/gemini_key.txt / KEYS.txt / .env GEMINI_API_KEY are still read as
+a fallback, so existing installs keep working. Reads happen per request, so a
+newly saved key/model takes effect immediately — no restart.
 """
-import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..models.user import User
 from ..utils.auth import get_current_user
+from ..services import ai_providers
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
-
-_KEY_DIR = os.path.join(os.getcwd(), "AI")
-_KEY_PATH = os.path.join(_KEY_DIR, "gemini_key.txt")
 
 
 class ApiKeyIn(BaseModel):
     api_key: str
 
 
-def _mask(key: str) -> str:
-    key = (key or "").strip()
-    if len(key) <= 8:
-        return "•" * len(key)
-    return f"{key[:4]}…{key[-4:]}"
+class ProviderKeyIn(BaseModel):
+    provider: str
+    api_key: str
 
 
-def _read_key() -> str:
-    if os.path.exists(_KEY_PATH):
-        with open(_KEY_PATH, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    return ""
+class ModelIn(BaseModel):
+    model: str
 
+
+# --------------------------------------------------------------------------- #
+# Multi-provider AI settings
+# --------------------------------------------------------------------------- #
+
+@router.get("/ai")
+async def get_ai_settings(current_user: User = Depends(get_current_user)):
+    """Selected model, the model catalog, and per-provider key status."""
+    return ai_providers.ai_settings()
+
+
+@router.post("/ai/model")
+async def set_ai_model(body: ModelIn, current_user: User = Depends(get_current_user)):
+    try:
+        ai_providers.set_selected_model(body.model)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Unknown model")
+    return ai_providers.ai_settings()
+
+
+@router.post("/ai/key")
+async def set_ai_key(body: ProviderKeyIn, current_user: User = Depends(get_current_user)):
+    provider = (body.provider or "").strip().lower()
+    if provider not in ai_providers.PROVIDERS:
+        raise HTTPException(status_code=400, detail="Unknown provider")
+    key = (body.api_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="API key cannot be empty")
+    if len(key) < 10:
+        raise HTTPException(status_code=400, detail="That doesn't look like a valid API key")
+    ai_providers.set_provider_key(provider, key)
+    return ai_providers.ai_settings()
+
+
+@router.delete("/ai/key/{provider}")
+async def delete_ai_key(provider: str, current_user: User = Depends(get_current_user)):
+    provider = (provider or "").strip().lower()
+    if provider not in ai_providers.PROVIDERS:
+        raise HTTPException(status_code=400, detail="Unknown provider")
+    ai_providers.delete_provider_key(provider)
+    return ai_providers.ai_settings()
+
+
+# --------------------------------------------------------------------------- #
+# Legacy Gemini-only endpoints (kept for backward compatibility)
+# --------------------------------------------------------------------------- #
 
 @router.get("/gemini-key")
 async def get_gemini_key(current_user: User = Depends(get_current_user)):
-    key = _read_key()
-    return {"configured": bool(key), "masked": _mask(key) if key else ""}
+    key = ai_providers.get_provider_key("gemini")
+    return {"configured": bool(key), "masked": ai_providers.mask_key(key) if key else ""}
 
 
 @router.post("/gemini-key")
@@ -48,14 +87,11 @@ async def set_gemini_key(body: ApiKeyIn, current_user: User = Depends(get_curren
         raise HTTPException(status_code=400, detail="API key cannot be empty")
     if len(key) < 10:
         raise HTTPException(status_code=400, detail="That doesn't look like a valid API key")
-    os.makedirs(_KEY_DIR, exist_ok=True)
-    with open(_KEY_PATH, "w", encoding="utf-8") as f:
-        f.write(key)
-    return {"configured": True, "masked": _mask(key)}
+    ai_providers.set_provider_key("gemini", key)
+    return {"configured": True, "masked": ai_providers.mask_key(key)}
 
 
 @router.delete("/gemini-key")
 async def delete_gemini_key(current_user: User = Depends(get_current_user)):
-    if os.path.exists(_KEY_PATH):
-        os.remove(_KEY_PATH)
+    ai_providers.delete_provider_key("gemini")
     return {"configured": False, "masked": ""}

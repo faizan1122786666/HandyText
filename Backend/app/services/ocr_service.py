@@ -11,7 +11,6 @@ import re
 import sys
 from typing import Literal, Optional
 
-from PIL import Image
 import pytesseract
 
 from ..config import settings
@@ -153,17 +152,17 @@ def _best_ocr_result(*results: dict) -> dict:
     return max(candidates, key=_text_quality_score)
 
 
-def _run_gemini_vision_ocr(image_path: str, lang_code: str) -> Optional[dict]:
+def _run_vision_ocr(image_path: str, lang_code: str) -> Optional[dict]:
     """
     Optional AI OCR fallback. Used only when local OCR is empty or weak.
-    Requires GEMINI_API_KEY in Backend/.env, KEYS.txt, or AI/gemini_key.txt.
+    Uses the model selected in Settings (Gemini / OpenAI / Anthropic /
+    OpenRouter). Requires that provider's API key to be configured; returns
+    ``None`` when no provider key is available.
     """
     try:
-        from .ai_service import GEMINI_MODEL, get_gemini_api_key
-        import google.generativeai as genai
+        from . import ai_providers
 
-        api_key = get_gemini_api_key()
-        if not api_key:
+        if not ai_providers.has_any_key():
             return None
 
         language_hint = "English"
@@ -192,11 +191,10 @@ Rules:
 
 Selected OCR language: {language_hint}."""
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        with Image.open(image_path) as image:
-            response = model.generate_content([prompt, image])
-        raw = (getattr(response, "text", "") or "").strip()
+        vision = ai_providers.generate_vision(prompt, image_path)
+        if not vision:
+            return None
+        raw = (vision.get("text") or "").strip()
         fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
         if fence:
             raw = fence.group(1).strip()
@@ -217,13 +215,13 @@ Selected OCR language: {language_hint}."""
             "bold_lines": bold_lines,
             "bold_phrases": bold_phrases,
             "confidence": 0.92,
-            "engine": "Gemini Vision",
+            "engine": vision.get("engine", "AI Vision"),
             "word_count": len(text.split()),
             "char_count": len(text),
             "uncertain_spans": [],
         }
     except Exception as exc:
-        logger.warning("Gemini vision OCR unavailable: %s", exc)
+        logger.warning("AI vision OCR unavailable: %s", exc)
         return None
 
 
@@ -274,7 +272,7 @@ def run_ocr(
 
     result = _best_ocr_result(easyocr_result, tesseract_result)
 
-    ai_result = _run_gemini_vision_ocr(image_path, lang_code)
+    ai_result = _run_vision_ocr(image_path, lang_code)
     if ai_result:
         result = ai_result
 

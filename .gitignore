@@ -25,9 +25,9 @@ Backend/.venv/
 # Backend/.env.example
 
 # Node.js
-# node_modules/
-# Frontend/node_modules/
-# Backend/node_modules/
+node_modules/
+Frontend/node_modules/
+Backend/node_modules/
 
 # Build folders
 build/
@@ -94,6 +94,8 @@ Backend/exports/
 KEYS.txt
 AI/*.txt
 Backend/AI/*.txt
+AI/ai_config.json
+Backend/AI/ai_config.json
 *.pem
 *.key
 

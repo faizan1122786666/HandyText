@@ -20,6 +20,7 @@ async def lifespan(app: FastAPI):
     app.state.db_ready = False
     app.state.db_error = None
     try:
+        import certifi
         from motor.motor_asyncio import AsyncIOMotorClient
         from beanie import init_beanie
         from app.database import get_database_url
@@ -28,7 +29,14 @@ async def lifespan(app: FastAPI):
         from app.models.feedback import Feedback
         from app.models.otp import OTP
 
-        mongo_client = AsyncIOMotorClient(get_database_url())
+        # Use certifi's CA bundle so the TLS handshake to MongoDB Atlas succeeds
+        # on Windows, where Python's OpenSSL may not find the system CA store
+        # (otherwise fails with "SSL: TLSV1_ALERT_INTERNAL_ERROR").
+        mongo_client = AsyncIOMotorClient(
+            get_database_url(),
+            tlsCAFile=certifi.where(),
+            serverSelectionTimeoutMS=20000,
+        )
         # Use the default database specified in the connection string
         db = mongo_client.get_default_database()
         await init_beanie(database=db, document_models=[User, Conversion, Feedback, OTP])

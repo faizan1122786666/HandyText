@@ -79,7 +79,7 @@ export function Sidebar({ isMobileOpen, isClosing, onCloseMobileMenu }) {
       >
         {/* Sidebar Header / Logo */}
         <div className={cn(
-          "h-14 flex items-center border-b border-slate-100",
+          "h-16 flex items-center border-b border-slate-100",
           (isExpanded || isMobileOpen) ? "px-3" : "px-2"
         )}>
           <Link
@@ -93,7 +93,7 @@ export function Sidebar({ isMobileOpen, isClosing, onCloseMobileMenu }) {
             <div
               className={cn(
                 "flex-shrink-0",
-                (isExpanded || isMobileOpen) ? "w-14 h-14" : "w-12 h-12"
+                (isExpanded || isMobileOpen) ? "w-16 h-16" : "w-14 h-14"
               )}
             >
               <img

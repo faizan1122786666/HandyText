@@ -18,7 +18,7 @@ import os
 import uuid
 import re
 from xml.sax.saxutils import escape
-from .ocr_layout import should_preserve_line_breaks
+from .ocr_layout import should_preserve_line_breaks, _TERMINAL_PUNCT
 
 
 # --- Right-to-left (Arabic-script) support ------------------------------------
@@ -163,6 +163,11 @@ def _is_blank_block(element) -> bool:
     return not element.get_text(strip=True)
 
 
+def _is_blank_group(group) -> bool:
+    """A paragraph group that is only blank line(s) — rendered as empty lines."""
+    return bool(group) and all(_is_blank_block(element) for element in group)
+
+
 def _is_heading_block(element) -> bool:
     if getattr(element, "name", None) in ("h1", "h2", "h3", "h4", "h5", "h6"):
         return True
@@ -190,13 +195,17 @@ def _is_fully_bold_block(element) -> bool:
 def _group_blocks_into_paragraphs(blocks):
     """Reflow per-line blocks into flowing paragraphs. The editor stores every
     OCR line as its own <div>, which would otherwise export as a separate
-    half-filled line. Consecutive wrapped lines are merged into one paragraph
-    (so text fills the full page width and wraps naturally), while structural
-    lines stay on their own: a blank line starts a new paragraph; headings and
-    fully-bold labels stand alone; and each bullet/numbered item starts a new
-    paragraph (its own wrapped continuation lines still merge into it)."""
+    half-filled line. Soft-wrapped lines (where the previous line ends
+    mid-sentence) are merged into one paragraph so text fills the full page
+    width, while structural lines stay on their own: a blank line is kept as an
+    empty paragraph; headings and fully-bold labels stand alone; each
+    bullet/numbered item starts a new paragraph; and a line that follows one
+    ending in sentence punctuation begins a new paragraph (so deliberately
+    separate lines are not collapsed together onto fewer pages)."""
     if should_preserve_line_breaks(_blocks_plain_text(blocks)):
-        return [[element] for element in blocks if not _is_blank_block(element)]
+        # Preserve every line, blank lines included, so the user's spacing and
+        # page layout are reproduced exactly.
+        return [[element] for element in blocks]
 
     groups = []
     current = []
@@ -205,6 +214,10 @@ def _group_blocks_into_paragraphs(blocks):
             if current:
                 groups.append(current)
                 current = []
+            # Keep each blank line as its own (empty) paragraph. The user often
+            # adds blank lines to push text onto a new page; dropping them
+            # collapsed multi-page documents back onto a single page on export.
+            groups.append([element])
         elif _is_heading_block(element) or _is_fully_bold_block(element):
             if current:
                 groups.append(current)
@@ -216,7 +229,15 @@ def _group_blocks_into_paragraphs(blocks):
                 current = []
             current = [element]
         else:
-            current.append(element)
+            prev_text = current[-1].get_text(strip=True) if current else ""
+            if current and prev_text.endswith(_TERMINAL_PUNCT):
+                # The previous line ends a sentence/label, so this line is a
+                # deliberate new line rather than a soft wrap — keep it as its
+                # own paragraph instead of merging it onto the previous one.
+                groups.append(current)
+                current = [element]
+            else:
+                current.append(element)
     if current:
         groups.append(current)
     return groups
@@ -300,6 +321,12 @@ def parse_html_to_docx(html_content: str, doc: Document):
             add_runs(paragraph, child, next_state)
 
     for group in _group_blocks_into_paragraphs(_block_elements(soup)):
+        if _is_blank_group(group):
+            # Empty paragraph -> one blank line, preserving the user's spacing.
+            blank = doc.add_paragraph()
+            blank.paragraph_format.line_spacing = 1.15
+            continue
+
         paragraph = doc.add_paragraph()
         paragraph.paragraph_format.space_after = Pt(4)
         paragraph.paragraph_format.line_spacing = 1.15
@@ -448,6 +475,10 @@ def _html_to_reportlab_markup(html_content: str) -> list[tuple[str, str]]:
 
     paragraphs = []
     for group in _group_blocks_into_paragraphs(_block_elements(soup)):
+        if _is_blank_group(group):
+            # Blank line -> one empty line (keeps the user's spacing/pagination).
+            paragraphs.append(("&nbsp;", ""))
+            continue
         is_heading = len(group) == 1 and _is_heading_block(group[0])
         parts = []
         for element in group:

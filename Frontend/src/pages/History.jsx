@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, Download, Trash2, FileText, Calendar, HardDrive, MoreVertical, Filter, ArrowUpDown, ChevronLeft, ChevronRight, CheckCircle2, Pencil, X, PenLine } from 'lucide-react';
+import { Search, Download, Trash2, FileText, Calendar, HardDrive, MoreVertical, Filter, ArrowUpDown, ChevronLeft, ChevronRight, CheckCircle2, Pencil, X, PenLine, Loader2 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { useToast } from '../context/ToastContext';
 import { api, API_URL } from '../utils/api';
@@ -285,7 +285,12 @@ export function History() {
       </div>
 
       {/* Main Content Area */}
-      {filteredHistory.length > 0 ? (
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-20 px-6 bg-white rounded-3xl border border-slate-100 text-center">
+          <Loader2 size={32} className="animate-spin text-[#3461ff] mb-4" />
+          <p className="text-slate-500 font-semibold text-sm">Loading your documents…</p>
+        </div>
+      ) : filteredHistory.length > 0 ? (
         <div className="flex flex-col gap-4">
           <div className="bg-white rounded-xl shadow-lg shadow-slate-200/30 border border-slate-200 overflow-hidden">
             {/* Desktop Table View */}
@@ -504,8 +509,9 @@ export function History() {
                 <button
                   type="submit"
                   disabled={isRenaming || !renameValue.trim()}
-                  className="px-4 py-2 text-sm font-bold text-white bg-[#3461ff] hover:bg-[#2b51d6] rounded-xl transition-colors disabled:opacity-50"
+                  className="px-4 py-2 text-sm font-bold text-white bg-[#3461ff] hover:bg-[#2b51d6] rounded-xl transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
                 >
+                  {isRenaming && <Loader2 size={14} className="animate-spin" />}
                   {isRenaming ? 'Saving...' : 'Save'}
                 </button>
               </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import authIllustration from '../../assets/auth_illustration.png';
 import logo from '../../assets/logo.png';
@@ -136,8 +136,9 @@ export function Register() {
             <button 
               type="submit"
               disabled={loading}
-              className={`w-full bg-[#3461ff] hover:bg-[#2b51d6] text-white py-2.5 rounded-xl font-medium transition-all shadow-md shadow-[#4169e1]/20 mt-2 ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
+              className={`w-full bg-[#3461ff] hover:bg-[#2b51d6] text-white py-2.5 rounded-xl font-medium transition-all shadow-md shadow-[#4169e1]/20 mt-2 flex items-center justify-center gap-2 ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
             >
+              {loading && <Loader2 size={16} className="animate-spin" />}
               {loading ? 'Creating account...' : 'Sign up'}
             </button>
             

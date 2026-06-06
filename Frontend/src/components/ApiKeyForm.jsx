@@ -54,15 +54,20 @@ function ProviderKeyRow({ provider, onSaved }) {
             </span>
           )}
         </span>
-        {provider.configured && (
+        {provider.configured && provider.removable && (
           <button
             type="button"
             onClick={handleRemove}
             disabled={saving}
             className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-red-500 hover:text-red-600 disabled:opacity-50"
           >
-            <Trash2 size={12} /> Remove
+            {saving ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Remove
           </button>
+        )}
+        {provider.configured && !provider.removable && (
+          <span className="shrink-0 text-[10px] font-semibold text-slate-400" title="This key is set in the server environment / .env file and must be changed there.">
+            set via environment
+          </span>
         )}
       </div>
 
@@ -220,14 +225,18 @@ export function ApiKeyForm() {
             )}
           </label>
 
-          {/* Per-provider keys */}
+          {/* API key for the selected model's provider only */}
           <div className="space-y-2.5">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Provider API keys
+              {selectedProvider ? `${selectedProvider.label} API key` : 'Provider API key'}
             </span>
-            {(data.providers || []).map((prov) => (
-              <ProviderKeyRow key={prov.id} provider={prov} onSaved={setData} />
-            ))}
+            {selectedProvider ? (
+              <ProviderKeyRow key={selectedProvider.id} provider={selectedProvider} onSaved={setData} />
+            ) : (
+              (data.providers || []).map((prov) => (
+                <ProviderKeyRow key={prov.id} provider={prov} onSaved={setData} />
+              ))
+            )}
           </div>
         </>
       )}

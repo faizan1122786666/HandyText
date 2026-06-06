@@ -168,6 +168,25 @@ def get_provider_key(provider: str) -> str:
     return ""
 
 
+def key_source(provider: str) -> str:
+    """Where a provider's key comes from: 'config', 'legacy', 'env', 'settings' or ''.
+
+    Only 'config' and 'legacy' keys can be deleted from the UI; keys set through
+    environment variables or the .env file are managed outside the app.
+    """
+    cfg = load_config()
+    if (cfg.get("keys", {}).get(provider) or "").strip():
+        return "config"
+    if provider == "gemini" and _legacy_gemini_key():
+        return "legacy"
+    env_name = _ENV_VARS.get(provider)
+    if env_name and (os.environ.get(env_name) or "").strip():
+        return "env"
+    if provider == "gemini" and settings.GEMINI_API_KEY:
+        return "settings"
+    return ""
+
+
 def set_provider_key(provider: str, key: str) -> None:
     if provider not in PROVIDERS:
         raise ValueError(f"Unknown provider: {provider}")
@@ -261,12 +280,17 @@ def provider_status() -> list:
     out = []
     for pid, meta in PROVIDERS.items():
         key = get_provider_key(pid)
+        src = key_source(pid)
         out.append({
             "id": pid,
             "label": meta["label"],
             "key_url": meta["key_url"],
             "configured": bool(key),
             "masked": mask_key(key),
+            "source": src,
+            # Only keys stored by the app (config file, or the legacy Gemini key
+            # file) can be removed here. Keys from environment / .env cannot.
+            "removable": src in ("config", "legacy"),
         })
     return out
 

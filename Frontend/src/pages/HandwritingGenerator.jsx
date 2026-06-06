@@ -93,6 +93,7 @@ export function HandwritingGenerator() {
   const [bgFile, setBgFile] = useState(null);
   const [bgPreview, setBgPreview] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [resultDataUrl, setResultDataUrl] = useState(saved.resultDataUrl || null);
   const [resultBlob, setResultBlob] = useState(null);
   const [historyItemId, setHistoryItemId] = useState(saved.historyItemId || null);
@@ -272,6 +273,7 @@ export function HandwritingGenerator() {
   };
 
   const handleDownloadPdf = async () => {
+    setDownloadingPdf(true);
     try {
       const blob = await requestGenerate('pdf');
       triggerDownload(blob, 'pdf');
@@ -284,6 +286,8 @@ export function HandwritingGenerator() {
       }
     } catch (err) {
       addToast(err?.message || 'Could not export PDF', 'error');
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 
@@ -510,9 +514,10 @@ export function HandwritingGenerator() {
                 <button
                   type="button"
                   onClick={handleDownloadPdf}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-white bg-[#3461ff] hover:bg-[#2a52d6] rounded-lg transition-colors"
+                  disabled={downloadingPdf}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-white bg-[#3461ff] hover:bg-[#2a52d6] rounded-lg transition-colors disabled:opacity-60"
                 >
-                  <FileDown size={13} /> PDF
+                  {downloadingPdf ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />} PDF
                 </button>
               </div>
             )}

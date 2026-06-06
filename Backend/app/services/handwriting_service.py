@@ -69,6 +69,25 @@ def _hex_to_rgb(value: str) -> tuple:
         return (34, 53, 111)
 
 
+def _break_long_word(word: str, font: ImageFont.FreeTypeFont, max_width: float):
+    """Split a single word that is wider than the page into character chunks
+    that each fit within max_width. Without this, one very long word (or the
+    same word typed many times with no spaces) would run past the page border
+    instead of wrapping onto the next line."""
+    pieces = []
+    current = ""
+    for ch in word:
+        trial = current + ch
+        if current and font.getlength(trial) > max_width:
+            pieces.append(current)
+            current = ch
+        else:
+            current = trial
+    if current:
+        pieces.append(current)
+    return pieces or [word]
+
+
 def _wrap_lines(text: str, font: ImageFont.FreeTypeFont, max_width: float):
     """Word-wrap to the page width while preserving the user's own line breaks."""
     lines = []
@@ -78,6 +97,16 @@ def _wrap_lines(text: str, font: ImageFont.FreeTypeFont, max_width: float):
             continue
         current = ""
         for word in raw.split(" "):
+            # A single word longer than the line width is split across lines so
+            # it never overflows the page border.
+            if font.getlength(word) > max_width:
+                if current:
+                    lines.append(current)
+                    current = ""
+                pieces = _break_long_word(word, font, max_width)
+                lines.extend(pieces[:-1])  # full lines
+                current = pieces[-1]        # remainder continues this line
+                continue
             trial = word if not current else f"{current} {word}"
             if not current or font.getlength(trial) <= max_width:
                 current = trial

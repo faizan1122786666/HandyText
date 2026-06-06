@@ -332,7 +332,19 @@ def parse_html_to_docx(html_content: str, doc: Document):
             # Justify body text so each line fills the full width.
             paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
 
-def generate_docx(html_content: str, plain_text: str, filename: str, page_border: bool = True) -> str:
+# Map a UI border style to Word's border value + size (size is in eighths of a
+# point, matching the editor's solid/thick/double/dashed/dotted options).
+_DOCX_BORDER = {
+    "solid": ("single", 4),
+    "thick": ("single", 24),
+    "double": ("double", 6),
+    "dashed": ("dashed", 4),
+    "dotted": ("dotted", 4),
+}
+
+
+def generate_docx(html_content: str, plain_text: str, filename: str,
+                  page_border: bool = True, page_border_style: str = "solid") -> str:
     """Generate a .docx file and return its path."""
     file_path = f"exports/{uuid.uuid4()}_{_safe_export_name(filename)}.docx"
     os.makedirs("exports", exist_ok=True)
@@ -353,23 +365,25 @@ def generate_docx(html_content: str, plain_text: str, filename: str, page_border
     section.bottom_margin = Pt(72)    # 1 inch
     
     # Set page border
-    def set_page_border(section, border_color='000000', border_size=4):
+    def set_page_border(section, border_val='single', border_size=4, border_color='000000'):
         p = section._sectPr
         pgBorders = OxmlElement('w:pgBorders')
         pgBorders.set(qn('w:offsetFrom'), 'page')
-        
+
         for border in ['top', 'left', 'bottom', 'right']:
             bd = OxmlElement(f'w:{border}')
-            bd.set(qn('w:val'), 'single')
+            bd.set(qn('w:val'), border_val)
             bd.set(qn('w:sz'), str(border_size))
             bd.set(qn('w:space'), '24')
             bd.set(qn('w:color'), border_color)
             pgBorders.append(bd)
-        
+
         p.append(pgBorders)
 
-    if page_border:
-        set_page_border(section)
+    border_style = (page_border_style or "solid").lower()
+    if page_border and border_style != "none":
+        val, size = _DOCX_BORDER.get(border_style, _DOCX_BORDER["solid"])
+        set_page_border(section, border_val=val, border_size=size)
 
     # Set default font
     style = doc.styles['Normal']
@@ -455,7 +469,8 @@ def _html_to_reportlab_markup(html_content: str) -> list[tuple[str, str]]:
         paragraphs.append((markup or "&nbsp;", plain))
     return paragraphs
 
-def generate_pdf(html_content: str, plain_text: str, filename: str, page_border: bool = True) -> str:
+def generate_pdf(html_content: str, plain_text: str, filename: str,
+                 page_border: bool = True, page_border_style: str = "solid") -> str:
     """Generate a .pdf file and return its path."""
     file_path = f"exports/{uuid.uuid4()}_{_safe_export_name(filename)}.pdf"
     os.makedirs("exports", exist_ok=True)
@@ -555,16 +570,28 @@ def generate_pdf(html_content: str, plain_text: str, filename: str, page_border:
                 story.append(Paragraph(markup, normal_style))
 
     # Custom page template with an optional border: a rectangle inset from the
-    # page edge with connected corners (matches the editor view).
+    # page edge with connected corners (matches the editor view). The line style
+    # mirrors the editor's solid/thick/double/dashed/dotted options.
+    border_style = (page_border_style or "solid").lower()
+
     def on_page(canvas, doc):
-        if not page_border:
+        if not page_border or border_style == "none":
             return
         canvas.saveState()
         canvas.setStrokeColorRGB(0, 0, 0)
-        canvas.setLineWidth(2)
+        canvas.setLineWidth(4 if border_style == "thick" else 2)
+        if border_style == "dashed":
+            canvas.setDash(6, 3)
+        elif border_style == "dotted":
+            canvas.setDash(1, 3)
         m = 0.5 * inch       # inset margin from the page edge
         page_width, page_height = A4
         canvas.rect(m, m, page_width - 2 * m, page_height - 2 * m, stroke=1, fill=0)
+        if border_style == "double":
+            # A second inner rectangle gives the classic double-line look.
+            g = 3
+            canvas.rect(m + g, m + g, page_width - 2 * m - 2 * g,
+                        page_height - 2 * m - 2 * g, stroke=1, fill=0)
         canvas.restoreState()
 
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)

@@ -11,6 +11,7 @@ class Conversion(Document):
     edited_text: Optional[str] = None
     edited_html: Optional[str] = None
     page_border: bool = True
+    page_border_style: str = "solid"  # none | solid | thick | double | dashed | dotted
     word_count: int = 0
     char_count: int = 0
     confidence_score: float = 0.0

@@ -19,6 +19,7 @@ class ConversionOut(ConversionBase):
     edited_text: Optional[str] = None
     edited_html: Optional[str] = None
     page_border: bool = True
+    page_border_style: str = "solid"
     word_count: int
     char_count: int
     confidence_score: float

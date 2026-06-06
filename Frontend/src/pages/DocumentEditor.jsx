@@ -4,6 +4,7 @@ import {
   ArrowLeft, Save, Bold, Italic, Underline, Strikethrough, Highlighter,
   AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered,
   Undo2, Redo2, RemoveFormatting, Loader2, Check, Wand2, X, Rows3, Square,
+  ChevronDown,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../context/ToastContext';
@@ -29,6 +30,22 @@ const HEADINGS = [
   { label: 'Heading 3', tag: 'H3' },
 ];
 
+// Gray gap drawn between auto-added pages so each A4 sheet is visually
+// separated, the way pages are spaced apart in Microsoft Word.
+const PAGE_GAP_PX = 28;
+
+// Page-border line styles offered in the toolbar (mirrors Word's border menu).
+const BORDER_OPTIONS = [
+  { id: 'none', label: 'No border', borderStyle: 'solid', borderWidth: 0 },
+  { id: 'solid', label: 'Solid', borderStyle: 'solid', borderWidth: 2 },
+  { id: 'thick', label: 'Thick', borderStyle: 'solid', borderWidth: 4 },
+  { id: 'double', label: 'Double', borderStyle: 'double', borderWidth: 4 },
+  { id: 'dashed', label: 'Dashed', borderStyle: 'dashed', borderWidth: 2 },
+  { id: 'dotted', label: 'Dotted', borderStyle: 'dotted', borderWidth: 2 },
+];
+const BORDER_COLOR = '#1e293b'; // slate-800
+const borderOption = (id) => BORDER_OPTIONS.find((o) => o.id === id) || BORDER_OPTIONS[1];
+
 const friendlyAiError = (message = '') => {
   if (/quota|rate.?limit|\b429\b/i.test(message)) return 'API limit exceeded.';
   return message || 'Could not load AI suggestions';
@@ -47,11 +64,11 @@ const readDraft = (id) => {
   }
 };
 
-const writeDraft = (id, title, pageBorder, editor) => {
+const writeDraft = (id, title, borderStyle, editor) => {
   if (!id || !editor) return;
   localStorage.setItem(draftKeyFor(id), JSON.stringify({
     title,
-    pageBorder,
+    borderStyle,
     edited_text: editor.innerText,
     edited_html: stripHighlights(editor.innerHTML),
     updated_at: Date.now(),
@@ -103,7 +120,8 @@ export function DocumentEditor() {
   const [suggestions, setSuggestions] = useState([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [documentHtml, setDocumentHtml] = useState('');
-  const [pageBorder, setPageBorder] = useState(true);
+  const [borderStyle, setBorderStyle] = useState('solid');
+  const [showBorderMenu, setShowBorderMenu] = useState(false);
   const [pageCount, setPageCount] = useState(1);
 
   const updateStats = useCallback(() => {
@@ -179,10 +197,10 @@ export function DocumentEditor() {
         const data = await api.get(`/upload/conversion/${id}`);
         if (cancelled) return;
         setTitle(data.original_filename || 'Document');
-        setPageBorder(data.page_border !== false);
+        setBorderStyle(data.page_border === false ? 'none' : (data.page_border_style || 'solid'));
         const draft = readDraft(id);
         if (draft?.title) setTitle(draft.title);
-        if (typeof draft?.pageBorder === 'boolean') setPageBorder(draft.pageBorder);
+        if (typeof draft?.borderStyle === 'string') setBorderStyle(draft.borderStyle);
 
         const html = draft?.edited_html?.trim()
           ? draft.edited_html
@@ -226,22 +244,22 @@ export function DocumentEditor() {
         edited_text: editorRef.current.innerText,
         edited_html: stripHighlights(editorRef.current.innerHTML),
       });
-      writeDraft(id, title, pageBorder, editorRef.current);
+      writeDraft(id, title, borderStyle, editorRef.current);
       setSaveState('saved');
       if (!silent) addToast('Document saved', 'success');
     } catch (err) {
       setSaveState('unsaved');
       if (!silent) addToast(err?.message || 'Save failed', 'error');
     }
-  }, [addToast, id, pageBorder, title]);
+  }, [addToast, id, borderStyle, title]);
 
   // Debounced auto-save while typing
   const scheduleSave = useCallback(() => {
     setSaveState('unsaved');
-    writeDraft(id, title, pageBorder, editorRef.current);
+    writeDraft(id, title, borderStyle, editorRef.current);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => doSave({ silent: true }), 1500);
-  }, [doSave, id, pageBorder, title]);
+  }, [doSave, id, borderStyle, title]);
 
   useEffect(() => {
     const handler = () => refreshActive();
@@ -268,20 +286,21 @@ export function DocumentEditor() {
     scheduleSave();
   };
 
-  // Toggle the page border (box around the page). Persisted immediately so the
-  // PDF/DOCX export uses the same setting.
-  const togglePageBorder = () => {
-    const next = !pageBorder;
-    setPageBorder(next);
+  // Choose the page-border line style (box around every page). Persisted
+  // immediately so the PDF/DOCX export uses the same setting.
+  const applyBorderStyle = (next) => {
+    setBorderStyle(next);
+    setShowBorderMenu(false);
     if (editorRef.current) {
       writeDraft(id, title, next, editorRef.current);
       api.post(`/export/${id}/save-edited`, {
         edited_text: editorRef.current.innerText,
         edited_html: stripHighlights(editorRef.current.innerHTML),
-        page_border: next,
+        page_border: next !== 'none',
+        page_border_style: next,
       }).catch(() => { /* non-blocking */ });
     }
-    addToast(next ? 'Page border enabled' : 'Page border removed', 'success');
+    addToast(next === 'none' ? 'Page border removed' : `Border style: ${borderOption(next).label}`, 'success');
   };
 
   const acceptSuggestion = (suggestion) => {
@@ -335,7 +354,7 @@ export function DocumentEditor() {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    writeDraft(id, title, pageBorder, editorRef.current);
+    writeDraft(id, title, borderStyle, editorRef.current);
     await doSave({ silent: true });
     navigate('/uploadpage');
   };
@@ -475,7 +494,54 @@ export function DocumentEditor() {
         <Divider />
 
         <ToolbarButton onClick={insertLine} title="Insert border line" icon={Rows3} />
-        <ToolbarButton onClick={togglePageBorder} title={pageBorder ? 'Remove page border' : 'Add page border'} icon={Square} isActive={pageBorder} />
+
+        {/* Page-border style picker (Word-style border options). */}
+        <div className="relative">
+          <button
+            type="button"
+            title="Page border style"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setShowBorderMenu((v) => !v)}
+            className={cn(
+              'flex items-center gap-0.5 p-2 rounded-md transition-colors',
+              borderStyle !== 'none' ? 'bg-blue-100 text-[#3461ff]' : 'text-slate-600 hover:bg-slate-100',
+            )}
+          >
+            <Square size={16} />
+            <ChevronDown size={12} />
+          </button>
+          {showBorderMenu && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setShowBorderMenu(false)} />
+              <div className="absolute right-0 top-full mt-1 z-40 w-48 rounded-xl border border-slate-100 bg-white py-1.5 shadow-xl">
+                <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Page border</p>
+                {BORDER_OPTIONS.map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => applyBorderStyle(o.id)}
+                    className={cn(
+                      'w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left text-[13px] font-semibold transition-colors',
+                      borderStyle === o.id ? 'text-[#3461ff] bg-blue-50' : 'text-slate-600 hover:bg-slate-50',
+                    )}
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <span
+                        className="w-8 shrink-0"
+                        style={o.id === 'none'
+                          ? { borderTop: '2px solid transparent' }
+                          : { borderTopStyle: o.borderStyle, borderTopWidth: Math.min(o.borderWidth, 3), borderTopColor: '#334155' }}
+                      />
+                      {o.label}
+                    </span>
+                    {borderStyle === o.id && <Check size={14} />}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         <Divider />
 
         <ToolbarButton onClick={() => exec('removeFormat')} title="Clear formatting" icon={RemoveFormatting} />
@@ -494,23 +560,51 @@ export function DocumentEditor() {
               style={{
                 width: '210mm',
                 maxWidth: '100%',
-                // Grow the sheet one A4 page at a time. A faint divider line is
-                // painted at every 297mm so each printed page is clearly
-                // delimited, and a fresh page appears the moment text overflows.
-                minHeight: `${pageCount * 297}mm`,
-                backgroundImage:
-                  'repeating-linear-gradient(to bottom, transparent 0, transparent calc(297mm - 1px), #cbd5e1 calc(297mm - 1px), #cbd5e1 297mm)',
+                // Grow the sheet one A4 page at a time; a fresh page appears the
+                // moment text overflows the current one.
+                minHeight: `${pageCount * PAGE_HEIGHT_PX}px`,
               }}
             >
-              {/* Assignment-style border: a rectangle inset from the page edges
-                  with connected corners (no corner gaps). pointer-events-none
-                  keeps the editor fully clickable underneath. */}
-              {pageBorder && (
+              {/* Gray gap between consecutive pages, like the spacing Word puts
+                  between pages. Drawn as an overlay (not flow space) so the
+                  editable text stays continuous and the page count is exact. */}
+              {Array.from({ length: pageCount - 1 }).map((_, i) => (
                 <div
-                  className="pointer-events-none absolute z-10 border-2 border-slate-800"
-                  style={{ inset: 'clamp(12px, 2.5vw, 20px)' }}
+                  key={`gap-${i}`}
+                  className="pointer-events-none absolute left-0 right-0 z-20 bg-slate-100"
+                  style={{
+                    top: `${(i + 1) * PAGE_HEIGHT_PX - PAGE_GAP_PX / 2}px`,
+                    height: `${PAGE_GAP_PX}px`,
+                    boxShadow:
+                      'inset 0 7px 6px -7px rgba(15,23,42,.22), inset 0 -7px 6px -7px rgba(15,23,42,.22)',
+                  }}
                 />
-              )}
+              ))}
+
+              {/* Assignment-style border, one rectangle per page, inset from the
+                  page edges. The chosen line style (solid/double/dashed/…) is
+                  applied here and mirrored in the PDF/DOCX export.
+                  pointer-events-none keeps the editor clickable underneath. */}
+              {borderStyle !== 'none' && Array.from({ length: pageCount }).map((_, i) => {
+                const opt = borderOption(borderStyle);
+                const topGap = i === 0 ? 0 : PAGE_GAP_PX / 2;
+                const botGap = i === pageCount - 1 ? 0 : PAGE_GAP_PX / 2;
+                return (
+                  <div
+                    key={`border-${i}`}
+                    className="pointer-events-none absolute z-10"
+                    style={{
+                      left: 'clamp(12px, 2.5vw, 20px)',
+                      right: 'clamp(12px, 2.5vw, 20px)',
+                      top: `calc(${i * PAGE_HEIGHT_PX + topGap}px + clamp(12px, 2.5vw, 20px))`,
+                      height: `calc(${PAGE_HEIGHT_PX - topGap - botGap}px - 2 * clamp(12px, 2.5vw, 20px))`,
+                      borderStyle: opt.borderStyle,
+                      borderWidth: opt.borderWidth,
+                      borderColor: BORDER_COLOR,
+                    }}
+                  />
+                );
+              })}
               <div
                 ref={editorRef}
                 contentEditable

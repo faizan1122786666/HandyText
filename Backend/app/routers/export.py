@@ -13,6 +13,15 @@ class SaveEditedTextRequest(BaseModel):
     edited_text: str
     edited_html: Optional[str] = None
     page_border: Optional[bool] = None
+    page_border_style: Optional[str] = None
+
+
+def _effective_border_style(conversion) -> str:
+    """Border style to render in exports, accounting for the legacy on/off flag
+    and documents saved before page_border_style existed."""
+    if not conversion.page_border:
+        return "none"
+    return getattr(conversion, "page_border_style", None) or "solid"
 
 async def get_conversion_by_id(conversion_id: str):
     conversion = await Conversion.get(PydanticObjectId(conversion_id))
@@ -29,6 +38,8 @@ async def save_edited_text(conversion_id: str, request: SaveEditedTextRequest):
     conversion.edited_html = request.edited_html
     if request.page_border is not None:
         conversion.page_border = request.page_border
+    if request.page_border_style is not None:
+        conversion.page_border_style = request.page_border_style
     await conversion.save()
     return {"message": "Text saved successfully"}
 
@@ -44,7 +55,9 @@ async def export_docx(conversion_id: str):
     conversion = await get_conversion_by_id(conversion_id)
     plain_text = conversion.edited_text or conversion.extracted_text
     html_content = conversion.edited_html
-    file_path = export_service.generate_docx(html_content, plain_text, conversion.original_filename, page_border=conversion.page_border)
+    file_path = export_service.generate_docx(html_content, plain_text, conversion.original_filename,
+                                             page_border=conversion.page_border,
+                                             page_border_style=_effective_border_style(conversion))
     return FileResponse(file_path, filename=f"{conversion.original_filename}.docx",
                         media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
 
@@ -53,5 +66,7 @@ async def export_pdf(conversion_id: str):
     conversion = await get_conversion_by_id(conversion_id)
     plain_text = conversion.edited_text or conversion.extracted_text
     html_content = conversion.edited_html
-    file_path = export_service.generate_pdf(html_content, plain_text, conversion.original_filename, page_border=conversion.page_border)
+    file_path = export_service.generate_pdf(html_content, plain_text, conversion.original_filename,
+                                            page_border=conversion.page_border,
+                                            page_border_style=_effective_border_style(conversion))
     return FileResponse(file_path, filename=f"{conversion.original_filename}.pdf", media_type='application/pdf')

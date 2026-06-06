@@ -1,8 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, Download, Trash2, Eye, FileText, Calendar, HardDrive, MoreVertical, Filter, ArrowUpDown, ChevronLeft, ChevronRight, CheckCircle2, Pencil, X } from 'lucide-react';
+import { Search, Download, Trash2, FileText, Calendar, HardDrive, MoreVertical, Filter, ArrowUpDown, ChevronLeft, ChevronRight, CheckCircle2, Pencil, X, PenLine } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { useToast } from '../context/ToastContext';
 import { api, API_URL } from '../utils/api';
+import {
+  deleteHandwritingHistoryItem,
+  loadHandwritingHistory,
+  renameHandwritingHistoryItem,
+} from '../utils/handwritingHistory';
 
 export function History() {
   const { addToast } = useToast();
@@ -17,9 +22,11 @@ export function History() {
     setLoading(true);
     try {
       const data = await api.get('/upload/history');
-      setHistory(data);
+      setHistory([...data, ...loadHandwritingHistory()]);
     } catch (err) {
-      addToast('Failed to fetch history: ' + err.message, 'error');
+      const localHandwriting = loadHandwritingHistory();
+      setHistory(localHandwriting);
+      addToast('Failed to fetch upload history: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -60,7 +67,12 @@ export function History() {
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this document from history?')) {
       try {
-        await api.delete(`/upload/conversion/${id}`);
+        const item = history.find((entry) => entry.id === id);
+        if (item?.type === 'handwriting') {
+          deleteHandwritingHistoryItem(id);
+        } else {
+          await api.delete(`/upload/conversion/${id}`);
+        }
         setHistory(history.filter(item => item.id !== id));
         addToast('Document deleted successfully', 'success');
         if (paginatedHistory.length === 1 && currentPage > 1) {
@@ -72,9 +84,30 @@ export function History() {
     }
   };
 
-  const handleDownload = (id, format) => {
+  const downloadDataUrl = (dataUrl, filename) => {
+    if (!dataUrl) {
+      addToast('This file is not available. Generate or download it again first.', 'info');
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const handleDownload = (item, format) => {
     addToast(`Exporting as ${format}...`, 'info');
-    const endpoint = `/export/${id}/${format.toLowerCase()}`;
+    if (item.type === 'handwriting') {
+      const ext = format.toLowerCase();
+      downloadDataUrl(
+        ext === 'pdf' ? item.pdf_data_url : item.png_data_url,
+        item.original_filename?.replace(/\.(png|pdf)$/i, `.${ext}`) || `handwriting.${ext}`
+      );
+      return;
+    }
+    const endpoint = `/export/${item.id}/${format.toLowerCase()}`;
     window.open(`${API_URL}${endpoint}`, '_blank');
   };
 
@@ -98,9 +131,14 @@ export function History() {
     }
     setIsRenaming(true);
     try {
-      const updated = await api.patch(`/upload/conversion/${renameTarget.id}`, {
-        original_filename: trimmed,
-      });
+      const updated = renameTarget.type === 'handwriting'
+        ? { ...renameTarget, original_filename: trimmed }
+        : await api.patch(`/upload/conversion/${renameTarget.id}`, {
+            original_filename: trimmed,
+          });
+      if (renameTarget.type === 'handwriting') {
+        renameHandwritingHistoryItem(renameTarget.id, trimmed);
+      }
       setHistory((prev) =>
         prev.map((item) => (item.id === renameTarget.id ? { ...item, ...updated } : item))
       );
@@ -142,12 +180,22 @@ export function History() {
             </button>
             <button
               type="button"
-              onClick={() => { handleDownload(item.id, 'PDF'); setActiveMenuId(null); }}
+              onClick={() => { handleDownload(item, item.type === 'handwriting' ? 'PNG' : 'PDF'); setActiveMenuId(null); }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors text-left"
             >
               <Download size={16} className="text-slate-400" />
-              Download
+              Download {item.type === 'handwriting' ? 'PNG' : ''}
             </button>
+            {item.type === 'handwriting' && (
+              <button
+                type="button"
+                onClick={() => { handleDownload(item, 'PDF'); setActiveMenuId(null); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors text-left"
+              >
+                <Download size={16} className="text-slate-400" />
+                Download PDF
+              </button>
+            )}
             <button
               type="button"
               onClick={() => { handleDelete(item.id); setActiveMenuId(null); }}
@@ -267,10 +315,18 @@ export function History() {
                     <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors">
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center text-[#3461ff] group-hover:scale-105 transition-transform">
-                            <FileText size={18} />
+                          <div className={cn(
+                            "w-9 h-9 rounded-lg flex items-center justify-center group-hover:scale-105 transition-transform",
+                            item.type === 'handwriting' ? "bg-violet-50 text-violet-600" : "bg-blue-50 text-[#3461ff]"
+                          )}>
+                            {item.type === 'handwriting' ? <PenLine size={18} /> : <FileText size={18} />}
                           </div>
-                          <span className="font-bold text-slate-800 text-xs">{item.original_filename}</span>
+                          <div className="min-w-0">
+                            <span className="block font-bold text-slate-800 text-xs truncate">{item.original_filename}</span>
+                            {item.type === 'handwriting' && (
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-violet-500">Digital to handwriting</span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-3.5">
@@ -312,11 +368,19 @@ export function History() {
                 <div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 active:bg-slate-50 transition-all">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center text-[#3461ff] border border-blue-100/50">
-                        <FileText size={22} />
+                      <div className={cn(
+                        "w-11 h-11 rounded-xl flex items-center justify-center border",
+                        item.type === 'handwriting'
+                          ? "bg-violet-50 text-violet-600 border-violet-100/50"
+                          : "bg-blue-50 text-[#3461ff] border-blue-100/50"
+                      )}>
+                        {item.type === 'handwriting' ? <PenLine size={22} /> : <FileText size={22} />}
                       </div>
                       <div className="flex flex-col">
                         <span className="font-bold text-slate-900 text-[15px] leading-tight mb-1.5">{item.original_filename}</span>
+                        {item.type === 'handwriting' && (
+                          <span className="mb-1 text-[10px] font-bold uppercase tracking-wide text-violet-500">Digital to handwriting</span>
+                        )}
                         <div className="flex items-center gap-3">
                            <span className="text-[12px] text-slate-400 flex items-center gap-1 font-medium">
                              <Calendar size={14} className="text-slate-300" /> {formatDate(item.created_at)}
@@ -389,7 +453,7 @@ export function History() {
           </div>
           <h3 className="text-xl font-bold text-slate-900 mb-2">No documents found</h3>
           <p className="text-slate-500 max-w-xs mx-auto mb-8">
-            {searchQuery ? `We couldn't find any documents matching "${searchQuery}". Try a different search term.` : "You haven't converted any documents yet. Start by uploading an image or PDF."}
+            {searchQuery ? `We couldn't find any documents matching "${searchQuery}". Try a different search term.` : "You haven't converted any documents yet. Start by uploading an image or creating handwriting."}
           </p>
           {!searchQuery && (
             <button className="bg-[#3461ff] text-white px-6 py-3 rounded-xl font-bold hover:bg-[#2b51d6] transition-all shadow-lg shadow-[#3461ff]/20">

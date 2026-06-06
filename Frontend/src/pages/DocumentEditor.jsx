@@ -60,6 +60,24 @@ const plainToHtml = (text = '') => {
   return html || '<div><br></div>';
 };
 
+const replaceFirstTextNodeMatch = (root, oldText, newText) => {
+  if (!root || !oldText) return false;
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      return node.nodeValue?.includes(oldText)
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_REJECT;
+    },
+  });
+
+  const textNode = walker.nextNode();
+  if (!textNode) return false;
+
+  textNode.nodeValue = textNode.nodeValue.replace(oldText, newText);
+  return true;
+};
+
 export function DocumentEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -122,10 +140,21 @@ export function DocumentEditor() {
         items = mapApiCorrections(buildLocalCorrections(plain), id).filter((item) => plain.includes(item.oldText));
       }
       setSuggestions(items);
+      if (items.length) {
+        addToast(`${items.length} suggestion(s) found`, 'success');
+      } else {
+        addToast('No AI suggestions found', 'success');
+      }
     } catch (err) {
       const local = mapApiCorrections(buildLocalCorrections(plain), id).filter((item) => plain.includes(item.oldText));
       setSuggestions(local);
-      if (!local.length) addToast(friendlyAiError(err?.message), 'error');
+      if (local.length) {
+        addToast(`${local.length} suggestion(s) found`, 'success');
+      } else if (/quota|rate.?limit|\b429\b/i.test(err?.message || '')) {
+        addToast('No AI suggestions found', 'success');
+      } else {
+        addToast(friendlyAiError(err?.message), 'error');
+      }
     } finally {
       setLoadingSuggestions(false);
     }
@@ -241,7 +270,13 @@ export function DocumentEditor() {
       setSuggestions((prev) => prev.filter((item) => item.id !== suggestion.id));
       return;
     }
-    replaceEditorText(current.replace(suggestion.oldText, suggestion.newText));
+    const replaced = replaceFirstTextNodeMatch(editorRef.current, suggestion.oldText, suggestion.newText);
+    if (!replaced) {
+      replaceEditorText(current.replace(suggestion.oldText, suggestion.newText));
+    } else {
+      updateStats();
+      scheduleSave();
+    }
     setSuggestions((prev) => prev.filter((item) => item.id !== suggestion.id));
   };
 

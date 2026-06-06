@@ -173,6 +173,39 @@ const imageSourceToFile = async (source, filename = 'image.png') => {
   return new File([blob], safeName, { type: blob.type || 'image/png' });
 };
 
+const A4_PAGE_CHARACTER_LIMIT = 2500;
+const A4_PAGE_LINE_LIMIT = 46;
+
+const paginateTextForA4 = (text = '') => {
+  const normalized = String(text).replace(/\r\n/g, '\n');
+  if (!normalized.trim()) return [''];
+
+  const pages = [];
+  let currentLines = [];
+  let currentLength = 0;
+
+  normalized.split('\n').forEach((line) => {
+    const wrappedLineCount = Math.max(1, Math.ceil(line.length / 92));
+    const nextLineCount = currentLines.length + wrappedLineCount;
+    const nextLength = currentLength + line.length + 1;
+
+    if (
+      currentLines.length > 0 &&
+      (nextLineCount > A4_PAGE_LINE_LIMIT || nextLength > A4_PAGE_CHARACTER_LIMIT)
+    ) {
+      pages.push(currentLines.join('\n'));
+      currentLines = [];
+      currentLength = 0;
+    }
+
+    currentLines.push(line);
+    currentLength += line.length + 1;
+  });
+
+  if (currentLines.length) pages.push(currentLines.join('\n'));
+  return pages.length ? pages : [''];
+};
+
 export function UploadDashboard() {
   const navigate = useNavigate();
   const { addToast } = useToast();
@@ -193,6 +226,7 @@ export function UploadDashboard() {
 
   // Editor State
   const editorRef = useRef(null);
+  const a4PagesRef = useRef(null);
   const fileInputRef = useRef(null);
   const skipHighlightRebuild = useRef(false);
   // Skip the automatic AI-correction fetch on the first sync (initial mount /
@@ -207,6 +241,7 @@ export function UploadDashboard() {
   const ocrData = currentPage?.ocrData;
   const uploadedImage = currentPage?.image;
   const conversionId = currentPage?.id;
+  const a4TextPages = paginateTextForA4(editorText);
 
   // Dropdown States
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -839,9 +874,6 @@ export function UploadDashboard() {
     try {
       const plain = getEditorPlainText();
       const data = await api.post(`/ai/correct/${conversionId}?action=${action}`, { text: plain });
-      if (data.message) {
-        addToast(data.message, 'info');
-      }
 
       let items = mapApiCorrections(data.corrections, conversionId).filter((item) =>
         plain.includes(item.oldText)
@@ -858,7 +890,12 @@ export function UploadDashboard() {
       applyEditorWithHighlights(plain, items, null);
 
       if (items.length > 0) {
+        if (data.message) {
+          addToast(data.message, 'info');
+        }
         addToast(`${items.length} issue(s) highlighted — Accept or Ignore each`, 'success');
+      } else {
+        addToast('No AI suggestions found', 'success');
       }
     } catch (err) {
       const message = err?.message || '';
@@ -870,7 +907,7 @@ export function UploadDashboard() {
           .filter((item) => plain.includes(item.oldText));
         setSuggestions(local);
         applyEditorWithHighlights(plain, local, null);
-        addToast('API limit exceeded.', 'info');
+        addToast(local.length ? 'API limit exceeded.' : 'No AI suggestions found', 'info');
       } else {
         addToast(friendlyAiError(message), 'error');
         setSuggestions([]);
@@ -887,14 +924,14 @@ export function UploadDashboard() {
     if (!editor) return;
 
     const mark = editor.querySelector(`[data-suggestion-id="${CSS.escape(suggestion.id)}"]`);
-    const current = getEditorPlainText();
+    const current = editorText || getEditorPlainText();
     let updated = '';
 
-    if (mark) {
+    if (current.includes(suggestion.oldText)) {
+      updated = current.replace(suggestion.oldText, suggestion.newText);
+    } else if (mark) {
       mark.replaceWith(document.createTextNode(suggestion.newText));
       updated = editor.innerText;
-    } else if (current.includes(suggestion.oldText)) {
-      updated = current.replace(suggestion.oldText, suggestion.newText);
     } else {
       addToast('Could not find that text in the editor', 'info');
       return;
@@ -2065,18 +2102,17 @@ export function UploadDashboard() {
             </div>
           </div>
           
-          {/* Text Editor Area — keep contentEditable empty; React must not manage its children */}
+          {/* Text Editor Area - hidden editable source plus visible A4 sheets */}
           <div 
-            className="relative flex-1 min-h-0"
+            className="relative flex-1 min-h-0 bg-slate-100"
             style={{ border: borderStyle !== 'none' ? borderStyle : undefined }}
           >
             <div
               ref={editorRef}
               dir={selectedLanguage.dir}
               className={cn(
-                "absolute inset-0 p-6 overflow-y-auto leading-[1.25] text-slate-800 outline-none whitespace-pre-wrap break-words",
+                "absolute left-0 top-0 h-px w-px overflow-hidden opacity-0 pointer-events-none",
                 "font-sans text-[13px]",
-                "[&_div]:min-h-[1.05em] [&_div]:mb-0 [&_.ocr-blank-line]:min-h-[0.25em]",
                 isProcessing && "pointer-events-none text-transparent"
               )}
               contentEditable={!isProcessing}
@@ -2089,6 +2125,53 @@ export function UploadDashboard() {
               }}
               onPaste={handleEditorPaste}
             />
+
+            <div
+              ref={a4PagesRef}
+              className={cn(
+                "absolute inset-0 overflow-y-auto px-4 py-6 sm:px-6",
+                isProcessing && "pointer-events-none"
+              )}
+            >
+              <div className="mx-auto flex w-full max-w-[760px] flex-col items-center gap-6">
+                {a4TextPages.map((pageText, pageIndex) => (
+                  <div
+                    key={`${conversionId || 'draft'}-${pageIndex}`}
+                    className="w-full max-w-[595px]"
+                  >
+                    <div className="mb-2 flex items-center justify-between px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      <span>A4 Sheet {pageIndex + 1}</span>
+                      <span>{pageIndex + 1} / {a4TextPages.length}</span>
+                    </div>
+                    <div
+                      dir={selectedLanguage.dir}
+                      className={cn(
+                        "mx-auto aspect-[210/297] w-full bg-white px-[9%] py-[10%] text-slate-800 shadow-[0_8px_30px_rgba(15,23,42,0.14)] outline-none",
+                        "font-sans text-[13px] leading-[1.45] whitespace-pre-wrap break-words",
+                        borderStyle !== 'none' && "ring-1 ring-slate-300"
+                      )}
+                      contentEditable={!isProcessing && Boolean(ocrData)}
+                      suppressContentEditableWarning
+                      onInput={() => {
+                        if (skipHighlightRebuild.current || !a4PagesRef.current) return;
+                        const nextText = Array.from(
+                          a4PagesRef.current.querySelectorAll('[data-a4-page]')
+                        ).map((page) => page.innerText.trimEnd()).join('\n');
+                        syncLanguageFromText(nextText);
+                        setEditorText(nextText);
+                        if (editorRef.current) {
+                          editorRef.current.innerHTML = buildEditorHtmlFromPlainText(nextText);
+                        }
+                      }}
+                      onPaste={handleEditorPaste}
+                      data-a4-page
+                    >
+                      {pageText}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {!ocrData && !isProcessing && (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500 px-6 pointer-events-auto">

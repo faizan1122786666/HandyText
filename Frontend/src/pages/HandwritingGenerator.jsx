@@ -2,12 +2,18 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, PenLine, ImagePlus, Sparkles, Download, FileDown, Loader2, X,
+  MoreVertical, Trash2,
   Type, Palette, FileText, Check,
 } from 'lucide-react';
 import { API_URL } from '../utils/api';
 import { getAccessToken } from '../utils/auth';
 import { useToast } from '../context/ToastContext';
 import { cn } from '../utils/cn';
+import {
+  addHandwritingHistoryItem,
+  deleteHandwritingHistoryItem,
+  updateHandwritingHistoryItem,
+} from '../utils/handwritingHistory';
 
 const INK_COLORS = [
   { label: 'Blue ink', value: '#22356f' },
@@ -89,6 +95,8 @@ export function HandwritingGenerator() {
   const [generating, setGenerating] = useState(false);
   const [resultDataUrl, setResultDataUrl] = useState(saved.resultDataUrl || null);
   const [resultBlob, setResultBlob] = useState(null);
+  const [historyItemId, setHistoryItemId] = useState(saved.historyItemId || null);
+  const [showTextMenu, setShowTextMenu] = useState(false);
 
   // Load available handwriting fonts
   useEffect(() => {
@@ -118,14 +126,14 @@ export function HandwritingGenerator() {
 
   // Persist input + settings + last result so nothing is lost on refresh.
   useEffect(() => {
-    const snapshot = { text, font, fontSize, inkColor, pageType, resultDataUrl };
+    const snapshot = { text, font, fontSize, inkColor, pageType, resultDataUrl, historyItemId };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
     } catch {
       // localStorage quota exceeded (large image) — keep at least the text/settings.
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...snapshot, resultDataUrl: null })); } catch { /* ignore */ }
     }
-  }, [text, font, fontSize, inkColor, pageType, resultDataUrl]);
+  }, [text, font, fontSize, inkColor, pageType, resultDataUrl, historyItemId]);
 
   const handleBgChange = (e) => {
     const file = e.target.files?.[0];
@@ -149,6 +157,25 @@ export function HandwritingGenerator() {
   const selectPageType = (id) => {
     setPageType(id);
     if (id !== 'custom') clearBg();
+  };
+
+  const handleDeletePageData = () => {
+    if (!window.confirm('Delete this handwriting page data?')) return;
+    if (historyItemId) {
+      deleteHandwritingHistoryItem(historyItemId);
+    }
+    clearBg();
+    setText('');
+    setFont(fonts[0]?.id || 'caveat');
+    setFontSize(46);
+    setInkColor(INK_COLORS[0].value);
+    setPageType('a4');
+    setResultBlob(null);
+    setResultDataUrl(null);
+    setHistoryItemId(null);
+    setShowTextMenu(false);
+    localStorage.removeItem(STORAGE_KEY);
+    addToast('Handwriting page data deleted', 'success');
   };
 
   const buildFormData = (fmt) => {
@@ -200,6 +227,18 @@ export function HandwritingGenerator() {
       setResultBlob(blob);
       const dataUrl = await blobToDataUrl(blob);
       setResultDataUrl(dataUrl);
+      const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+      const entry = addHandwritingHistoryItem({
+        name: `handwriting-${new Date().toISOString().slice(0, 10)}.png`,
+        text,
+        wordCount,
+        pageType,
+        font,
+        fontSize,
+        inkColor,
+        pngDataUrl: dataUrl,
+      });
+      setHistoryItemId(entry.id);
       addToast('Handwriting generated!', 'success');
     } catch (err) {
       addToast(err?.message || 'Could not generate handwriting', 'error');
@@ -221,13 +260,28 @@ export function HandwritingGenerator() {
 
   const handleDownloadPng = () => {
     const blob = resultBlob || (resultDataUrl ? dataUrlToBlob(resultDataUrl) : null);
-    if (blob) triggerDownload(blob, 'png');
+    if (blob) {
+      triggerDownload(blob, 'png');
+      if (historyItemId) {
+        updateHandwritingHistoryItem(historyItemId, {
+          downloaded_formats: ['png'],
+          png_data_url: resultDataUrl,
+        });
+      }
+    }
   };
 
   const handleDownloadPdf = async () => {
     try {
       const blob = await requestGenerate('pdf');
       triggerDownload(blob, 'pdf');
+      if (historyItemId) {
+        const pdfDataUrl = await blobToDataUrl(blob);
+        updateHandwritingHistoryItem(historyItemId, {
+          pdf_data_url: pdfDataUrl,
+          downloaded_formats: ['png', 'pdf'],
+        });
+      }
     } catch (err) {
       addToast(err?.message || 'Could not export PDF', 'error');
     }
@@ -259,7 +313,6 @@ export function HandwritingGenerator() {
             </div>
             <div className="min-w-0">
               <h1 className="text-[15px] font-extrabold text-slate-900 leading-tight truncate">Text → Handwriting</h1>
-              <p className="text-[11px] text-slate-400 font-medium leading-tight hidden sm:block">Turn typed text into realistic handwriting</p>
             </div>
           </div>
         </div>
@@ -270,9 +323,36 @@ export function HandwritingGenerator() {
         <div className="xl:col-span-2 flex flex-col gap-5 min-w-0">
           {/* Text input */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100">
-              <SectionLabel icon={Type}>Your text</SectionLabel>
-              <p className="text-[11px] text-slate-400 -mt-1.5">Write or paste what you want converted to handwriting.</p>
+            <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <SectionLabel icon={Type}>Your text</SectionLabel>
+                <p className="text-[11px] text-slate-400 -mt-1.5">Write or paste what you want converted to handwriting.</p>
+              </div>
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowTextMenu((value) => !value)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                  title="More options"
+                >
+                  <MoreVertical size={17} />
+                </button>
+                {showTextMenu && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setShowTextMenu(false)} />
+                    <div className="absolute right-0 top-full mt-1 z-30 w-44 rounded-xl border border-slate-100 bg-white py-1.5 shadow-xl">
+                      <button
+                        type="button"
+                        onClick={handleDeletePageData}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[13px] font-bold text-red-500 hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 size={15} />
+                        Delete page data
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
             <textarea
               value={text}

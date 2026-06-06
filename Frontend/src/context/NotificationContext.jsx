@@ -1,30 +1,45 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 
 const NotificationContext = createContext();
+const NOTIFICATIONS_STORAGE_KEY = 'handytext-notifications';
+
+const loadStoredNotifications = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
 export function NotificationProvider({ children }) {
-  const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState(() => loadStoredNotifications());
+  const unreadCount = notifications.filter((notification) => !notification.read).length;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications));
+    } catch {
+      /* ignore storage quota errors */
+    }
+  }, [notifications]);
 
   const addNotification = useCallback((notification) => {
     const newNotification = {
-      id: Date.now(),
-      timestamp: new Date(),
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      timestamp: new Date().toISOString(),
       read: false,
       ...notification
     };
     setNotifications(prev => [newNotification, ...prev]);
-    setUnreadCount(prev => prev + 1);
   }, []);
 
   const markAllAsRead = useCallback(() => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-    setUnreadCount(0);
   }, []);
 
   const clearNotifications = useCallback(() => {
     setNotifications([]);
-    setUnreadCount(0);
   }, []);
 
   return (

@@ -8,7 +8,15 @@ import {
 import { api } from '../utils/api';
 import { useToast } from '../context/ToastContext';
 import { cn } from '../utils/cn';
-import { buildLocalCorrections, mapApiCorrections } from '../utils/editorHighlights';
+import {
+  buildLocalCorrections,
+  mapApiCorrections,
+  applyHighlights,
+  stripHighlights,
+} from '../utils/editorHighlights';
+
+// One A4 page (297mm) in CSS pixels at the standard 96dpi reference.
+const PAGE_HEIGHT_PX = 297 * (96 / 25.4); // ≈ 1122.52
 
 const FONT_FAMILIES = ['Times New Roman', 'Arial', 'Calibri', 'Georgia', 'Verdana', 'Tahoma', 'Courier New'];
 const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48];
@@ -45,7 +53,7 @@ const writeDraft = (id, title, pageBorder, editor) => {
     title,
     pageBorder,
     edited_text: editor.innerText,
-    edited_html: editor.innerHTML,
+    edited_html: stripHighlights(editor.innerHTML),
     updated_at: Date.now(),
   }));
 };
@@ -96,11 +104,21 @@ export function DocumentEditor() {
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [documentHtml, setDocumentHtml] = useState('');
   const [pageBorder, setPageBorder] = useState(true);
+  const [pageCount, setPageCount] = useState(1);
 
   const updateStats = useCallback(() => {
     const text = editorRef.current?.innerText || '';
     const words = text.trim() ? text.trim().split(/\s+/).length : 0;
     setStats({ words, chars: text.length });
+  }, []);
+
+  // Grow the sheet into extra A4 pages automatically as the content overflows,
+  // the same way a new page appears in Word once the current one fills up.
+  const recalcPages = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const count = Math.max(1, Math.ceil((el.scrollHeight - 1) / PAGE_HEIGHT_PX));
+    setPageCount((prev) => (prev === count ? prev : count));
   }, []);
 
   const refreshActive = useCallback(() => {
@@ -117,13 +135,6 @@ export function DocumentEditor() {
   }, []);
 
   const getEditorPlainText = useCallback(() => editorRef.current?.innerText || '', []);
-
-  const replaceEditorText = useCallback((text) => {
-    if (!editorRef.current) return;
-    editorRef.current.innerHTML = plainToHtml(text);
-    updateStats();
-    scheduleSave();
-  }, [updateStats]);
 
   const fetchAiCorrections = useCallback(async (action = 'proofread') => {
     const plain = getEditorPlainText();
@@ -195,8 +206,17 @@ export function DocumentEditor() {
     if (loading || !editorRef.current || !documentHtml) return;
     editorRef.current.innerHTML = documentHtml;
     updateStats();
+    recalcPages();
     window.setTimeout(() => fetchAiCorrections('proofread'), 0);
-  }, [documentHtml, fetchAiCorrections, loading, updateStats]);
+  }, [documentHtml, fetchAiCorrections, loading, updateStats, recalcPages]);
+
+  // Paint red wavy underlines under every pending suggestion, then keep the
+  // page count in sync. Runs whenever the suggestion list changes.
+  useEffect(() => {
+    if (loading || !editorRef.current) return;
+    applyHighlights(editorRef.current, suggestions);
+    recalcPages();
+  }, [suggestions, loading, recalcPages]);
 
   const doSave = useCallback(async ({ silent } = {}) => {
     if (!editorRef.current) return;
@@ -204,7 +224,7 @@ export function DocumentEditor() {
     try {
       await api.post(`/export/${id}/save-edited`, {
         edited_text: editorRef.current.innerText,
-        edited_html: editorRef.current.innerHTML,
+        edited_html: stripHighlights(editorRef.current.innerHTML),
       });
       writeDraft(id, title, pageBorder, editorRef.current);
       setSaveState('saved');
@@ -257,7 +277,7 @@ export function DocumentEditor() {
       writeDraft(id, title, next, editorRef.current);
       api.post(`/export/${id}/save-edited`, {
         edited_text: editorRef.current.innerText,
-        edited_html: editorRef.current.innerHTML,
+        edited_html: stripHighlights(editorRef.current.innerHTML),
         page_border: next,
       }).catch(() => { /* non-blocking */ });
     }
@@ -265,18 +285,26 @@ export function DocumentEditor() {
   };
 
   const acceptSuggestion = (suggestion) => {
-    const current = getEditorPlainText();
-    if (!current.includes(suggestion.oldText)) {
-      setSuggestions((prev) => prev.filter((item) => item.id !== suggestion.id));
-      return;
-    }
-    const replaced = replaceFirstTextNodeMatch(editorRef.current, suggestion.oldText, suggestion.newText);
-    if (!replaced) {
-      replaceEditorText(current.replace(suggestion.oldText, suggestion.newText));
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    // Replace the text in place so the surrounding rich formatting
+    // (bold, colors, highlights, fonts) is fully preserved. We prefer the
+    // exact highlighted mark; otherwise fall back to the first text match.
+    const mark = editor.querySelector(
+      `mark.ocr-error[data-suggestion-id="${CSS.escape(suggestion.id)}"]`,
+    );
+    if (mark) {
+      mark.replaceWith(document.createTextNode(suggestion.newText));
+      editor.normalize();
     } else {
-      updateStats();
-      scheduleSave();
+      replaceFirstTextNodeMatch(editor, suggestion.oldText, suggestion.newText);
     }
+
+    updateStats();
+    scheduleSave();
+    // Dropping the suggestion re-runs applyHighlights, which clears the now
+    // stale mark and re-underlines whatever is still pending.
     setSuggestions((prev) => prev.filter((item) => item.id !== suggestion.id));
   };
 
@@ -463,7 +491,16 @@ export function DocumentEditor() {
           ) : (
             <div
               className="relative mx-auto bg-white shadow-md rounded-sm"
-              style={{ width: '210mm', maxWidth: '100%', minHeight: '297mm' }}
+              style={{
+                width: '210mm',
+                maxWidth: '100%',
+                // Grow the sheet one A4 page at a time. A faint divider line is
+                // painted at every 297mm so each printed page is clearly
+                // delimited, and a fresh page appears the moment text overflows.
+                minHeight: `${pageCount * 297}mm`,
+                backgroundImage:
+                  'repeating-linear-gradient(to bottom, transparent 0, transparent calc(297mm - 1px), #cbd5e1 calc(297mm - 1px), #cbd5e1 297mm)',
+              }}
             >
               {/* Assignment-style border: a rectangle inset from the page edges
                   with connected corners (no corner gaps). pointer-events-none
@@ -479,13 +516,12 @@ export function DocumentEditor() {
                 contentEditable
                 suppressContentEditableWarning
                 dir="auto"
-                onInput={() => { updateStats(); scheduleSave(); }}
+                onInput={() => { updateStats(); scheduleSave(); recalcPages(); }}
                 onKeyUp={refreshActive}
                 onMouseUp={refreshActive}
                 spellCheck={false}
-                className="outline-none text-slate-900 leading-relaxed"
+                className="outline-none text-slate-900 leading-relaxed bg-transparent"
                 style={{
-                  minHeight: '297mm',
                   padding: 'clamp(18px, 5vw, 25mm)',
                   fontFamily,
                   fontSize: `${fontSize}px`,

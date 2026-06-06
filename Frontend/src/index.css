@@ -20,18 +20,18 @@ body {
   animation-fill-mode: forwards;
 }
 
-/* OCR / grammar error highlights in extracted text editor */
+/* OCR / grammar error highlights in extracted text editor.
+   Red wavy underline, just like a spell-checker in Word. */
 .ocr-error {
-  text-decoration: underline;
-  text-decoration-color: #ef4444;
-  text-decoration-thickness: 2px;
+  text-decoration: underline wavy #ef4444;
+  text-decoration-skip-ink: none;
   text-underline-offset: 3px;
-  background-color: #fef2f2;
-  border-radius: 2px;
+  background-color: transparent;
   cursor: pointer;
 }
 
 .ocr-error-active {
   background-color: #fee2e2;
+  border-radius: 2px;
   outline: 1px solid #fca5a5;
 }

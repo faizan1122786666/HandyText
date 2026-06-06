@@ -109,3 +109,118 @@ export function mapApiCorrections(corrections, conversionId) {
     color: 'bg-red-500',
   }));
 }
+
+/* ------------------------------------------------------------------ *
+ * Inline red-underline highlights for the rich (contentEditable)
+ * document editor. These wrap matched error text in <mark class="ocr-error">
+ * spans WITHOUT touching the surrounding formatting (bold, colors,
+ * highlights, fonts), so accepting a suggestion never wipes styling.
+ * ------------------------------------------------------------------ */
+
+/** Collect every text node under `root` that is not already inside a highlight. */
+function collectTextNodes(root) {
+  const nodes = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue) return NodeFilter.FILTER_REJECT;
+      // Skip text already wrapped in an error mark.
+      if (node.parentElement?.closest('mark.ocr-error')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  let node;
+  while ((node = walker.nextNode())) nodes.push(node);
+  return nodes;
+}
+
+/** Current caret offset (in characters) within the editor, or null if the
+ *  selection is not inside the editor. Used to keep the cursor steady while
+ *  we add/remove highlight wrappers. */
+export function getEditorCaretOffset(editor) {
+  const sel = window.getSelection();
+  if (!editor || !sel || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+  if (!editor.contains(range.endContainer)) return null;
+  const pre = range.cloneRange();
+  pre.selectNodeContents(editor);
+  pre.setEnd(range.endContainer, range.endOffset);
+  return pre.toString().length;
+}
+
+/** Restore the caret to a character offset previously captured. */
+export function setEditorCaretOffset(editor, offset) {
+  if (!editor || offset == null) return;
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
+  let remaining = offset;
+  let node;
+  while ((node = walker.nextNode())) {
+    const len = node.nodeValue.length;
+    if (remaining <= len) {
+      const range = document.createRange();
+      range.setStart(node, remaining);
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return;
+    }
+    remaining -= len;
+  }
+}
+
+/** Unwrap every highlight mark under `root`, leaving the plain text behind. */
+export function clearHighlights(root) {
+  if (!root) return;
+  root.querySelectorAll('mark.ocr-error').forEach((mark) => {
+    const parent = mark.parentNode;
+    if (!parent) return;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+    parent.normalize();
+  });
+}
+
+/** Wrap each pending suggestion's text in a red-underline mark, preserving the
+ *  existing rich formatting and the user's caret position. */
+export function applyHighlights(editor, suggestions) {
+  if (!editor) return;
+  const caret = getEditorCaretOffset(editor);
+  clearHighlights(editor);
+
+  const needles = (suggestions || []).filter((s) => s.oldText);
+  if (needles.length) {
+    for (const textNode of collectTextNodes(editor)) {
+      let node = textNode;
+      while (node && node.nodeValue) {
+        let best = null;
+        for (const suggestion of needles) {
+          const index = node.nodeValue.indexOf(suggestion.oldText);
+          if (index !== -1 && (!best || index < best.index)) best = { index, suggestion };
+        }
+        if (!best) break;
+
+        const { index, suggestion } = best;
+        const range = document.createRange();
+        range.setStart(node, index);
+        range.setEnd(node, index + suggestion.oldText.length);
+
+        const mark = document.createElement('mark');
+        mark.className = 'ocr-error';
+        mark.setAttribute('data-suggestion-id', suggestion.id);
+        mark.title = `Suggested: ${suggestion.newText}${suggestion.reason ? ` (${suggestion.reason})` : ''}`;
+        range.surroundContents(mark);
+
+        // Continue searching in the text that follows the new mark.
+        node = mark.nextSibling && mark.nextSibling.nodeType === Node.TEXT_NODE ? mark.nextSibling : null;
+      }
+    }
+  }
+
+  setEditorCaretOffset(editor, caret);
+}
+
+/** Strip highlight marks out of an HTML string before persisting/exporting,
+ *  so saved documents never carry the red-underline styling. */
+export function stripHighlights(html = '') {
+  return html.replace(/<mark[^>]*class="ocr-error"[^>]*>([\s\S]*?)<\/mark>/g, '$1');
+}

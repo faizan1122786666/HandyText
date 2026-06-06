@@ -54,7 +54,7 @@ export function ToastProvider({ children }) {
             'bg-white/95 backdrop-blur-xl rounded-2xl ring-1 ring-slate-900/[0.06]',
             'shadow-[0_12px_40px_-8px_rgba(15,23,42,0.25)] transition-all duration-300 ease-out',
             variant.glow,
-            t.visible ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 translate-x-8 scale-95',
+            t.visible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-[120%]',
           )}
         >
           {/* Icon badge */}

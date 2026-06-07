@@ -131,6 +131,37 @@ html.dark textarea::placeholder {
   animation-fill-mode: forwards;
 }
 
+/* Restore list rendering inside the rich-text editor. Tailwind's preflight
+   reset strips list-style/padding from ul/ol, which hid the bullets and
+   numbers produced by the toolbar's Bullet/Numbered list buttons. */
+.doc-editor ul,
+.doc-editor ol {
+  margin: 0.4em 0;
+  padding-left: 1.6em;
+}
+.doc-editor ul {
+  list-style-type: disc;
+}
+.doc-editor ol {
+  list-style-type: decimal;
+}
+.doc-editor ul ul {
+  list-style-type: circle;
+}
+.doc-editor ul ul ul {
+  list-style-type: square;
+}
+.doc-editor ol ol {
+  list-style-type: lower-alpha;
+}
+.doc-editor ol ol ol {
+  list-style-type: lower-roman;
+}
+.doc-editor li {
+  display: list-item;
+  margin: 0.15em 0;
+}
+
 /* OCR / grammar error highlights in extracted text editor.
    Red wavy underline, just like a spell-checker in Word. */
 .ocr-error {

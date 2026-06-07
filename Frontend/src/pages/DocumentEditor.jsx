@@ -614,7 +614,7 @@ export function DocumentEditor() {
                 onKeyUp={refreshActive}
                 onMouseUp={refreshActive}
                 spellCheck={false}
-                className="outline-none text-slate-900 leading-relaxed bg-transparent"
+                className="doc-editor outline-none text-slate-900 leading-relaxed bg-transparent"
                 style={{
                   padding: 'clamp(18px, 5vw, 25mm)',
                   fontFamily,

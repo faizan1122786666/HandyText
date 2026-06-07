@@ -112,11 +112,34 @@ def _css_value(style: str, name: str) -> str:
     return match.group(1).strip().lower() if match else ""
 
 
+# Background values that mean "no highlight" — these must not export as a
+# yellow highlight. Notably the editor's "remove highlight" button emits
+# background-color: transparent.
+_NO_HIGHLIGHT = {
+    "", "transparent", "none", "initial", "inherit", "unset",
+    "#fff", "#ffffff", "white", "rgb(255,255,255)", "rgba(0,0,0,0)",
+}
+
+
+def _is_ocr_mark(node) -> bool:
+    """True for the editor's spell-check underline (<mark class="ocr-error">),
+    which is an on-screen affordance only and must never export as a highlight."""
+    if getattr(node, "name", None) != "mark":
+        return False
+    classes = node.get("class") or []
+    if isinstance(classes, str):
+        classes = classes.split()
+    return "ocr-error" in classes
+
+
 def _is_highlighted(node) -> bool:
     if getattr(node, "name", None) == "mark":
-        return True
+        # ocr-error marks are spell-check underlines, not user highlights.
+        return not _is_ocr_mark(node)
     style = node.get("style", "") if hasattr(node, "get") else ""
-    return bool(_css_value(style, "background-color") or _css_value(style, "background"))
+    color = _css_value(style, "background-color") or _css_value(style, "background")
+    color = re.sub(r"\s+", "", color)
+    return bool(color) and color not in _NO_HIGHLIGHT
 
 
 def _is_bold(node) -> bool:
@@ -183,6 +206,31 @@ def _starts_with_bullet(element) -> bool:
     return bool(_BULLET_RE.match(element.get_text() or ""))
 
 
+def _is_list_item(element) -> bool:
+    """True for an <li> produced by the toolbar's Bullet / Numbered list buttons.
+    Its marker (• or 1. 2. …) is rendered by CSS in the editor, so it is absent
+    from the text and must be re-created for the export."""
+    return getattr(element, "name", None) == "li"
+
+
+def _list_marker(li) -> str:
+    """The marker text for a list item: a sequential number for an ordered list
+    (<ol>), a bullet for an unordered list (<ul>), mirroring the editor view."""
+    parent = li.find_parent(["ol", "ul"]) if hasattr(li, "find_parent") else None
+    if parent is None or parent.name != "ol":
+        return "•"
+    # Number by position among the item's *direct* siblings so nested lists each
+    # count from their own start.
+    siblings = parent.find_all("li", recursive=False)
+    try:
+        position = siblings.index(li) + 1
+    except ValueError:
+        position = 1
+    start = parent.get("start")
+    base = int(start) if (start and str(start).isdigit()) else 1
+    return f"{base + position - 1}."
+
+
 def _is_fully_bold_block(element) -> bool:
     """True when the whole block is bold (a label/heading like 'Functions:')."""
     text = element.get_text(strip=True)
@@ -219,6 +267,13 @@ def _group_blocks_into_paragraphs(blocks):
             # collapsed multi-page documents back onto a single page on export.
             groups.append([element])
         elif _is_heading_block(element) or _is_fully_bold_block(element):
+            if current:
+                groups.append(current)
+                current = []
+            groups.append([element])
+        elif _is_list_item(element):
+            # Every list item stands alone so its bullet/number is preserved and
+            # following lines are never merged onto it.
             if current:
                 groups.append(current)
                 current = []
@@ -332,11 +387,17 @@ def parse_html_to_docx(html_content: str, doc: Document):
         paragraph.paragraph_format.line_spacing = 1.15
 
         is_heading = len(group) == 1 and _is_heading_block(group[0])
+        list_item = group[0] if (len(group) == 1 and _is_list_item(group[0])) else None
         if is_heading:
             paragraph.paragraph_format.space_after = Pt(8)
             base_state = {"bold": True, "italic": False, "underline": False, "strike": False, "highlight": False}
         else:
             base_state = {"bold": False, "italic": False, "underline": False, "strike": False, "highlight": False}
+
+        # Re-create the bullet/number that the editor draws via CSS (it is not in
+        # the item's text), then render the item content after it.
+        if list_item is not None:
+            paragraph.add_run(f"{_list_marker(list_item)} ")
 
         # Merge the lines of this paragraph, separating them with a space so the
         # text reflows to fill the line rather than breaking after each line.
@@ -348,7 +409,7 @@ def parse_html_to_docx(html_content: str, doc: Document):
         group_text = " ".join(el.get_text() for el in group)
         if _has_arabic(group_text):
             _set_paragraph_rtl(paragraph)
-        elif _BULLET_RE.match(group_text):
+        elif list_item is not None or _BULLET_RE.match(group_text):
             # Hanging indent so wrapped lines align under the text.
             paragraph.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
             paragraph.paragraph_format.left_indent = Inches(0.3)
@@ -477,9 +538,10 @@ def _html_to_reportlab_markup(html_content: str) -> list[tuple[str, str]]:
     for group in _group_blocks_into_paragraphs(_block_elements(soup)):
         if _is_blank_group(group):
             # Blank line -> one empty line (keeps the user's spacing/pagination).
-            paragraphs.append(("&nbsp;", ""))
+            paragraphs.append(("&nbsp;", "", None))
             continue
         is_heading = len(group) == 1 and _is_heading_block(group[0])
+        list_item = group[0] if (len(group) == 1 and _is_list_item(group[0])) else None
         parts = []
         for element in group:
             base_state = {
@@ -497,7 +559,8 @@ def _html_to_reportlab_markup(html_content: str) -> list[tuple[str, str]]:
         if is_heading and markup:
             markup = f"<b>{markup}</b>"
         plain = " ".join(el.get_text() for el in group)
-        paragraphs.append((markup or "&nbsp;", plain))
+        bullet = _list_marker(list_item) if list_item is not None else None
+        paragraphs.append((markup or "&nbsp;", plain, bullet))
     return paragraphs
 
 def generate_pdf(html_content: str, plain_text: str, filename: str,
@@ -576,9 +639,9 @@ def generate_pdf(html_content: str, plain_text: str, filename: str,
     if html_content:
         paragraphs = _html_to_reportlab_markup(html_content)
     else:
-        paragraphs = [(escape(p), p) for p in _reflow_plain_text(plain_text)]
+        paragraphs = [(escape(p), p, None) for p in _reflow_plain_text(plain_text)]
 
-    for markup, plain in paragraphs:
+    for markup, plain, bullet in paragraphs:
         if not (markup and markup.strip()):
             story.append(Spacer(1, 6))
         elif arabic_ok and _has_arabic(plain):
@@ -590,13 +653,17 @@ def generate_pdf(html_content: str, plain_text: str, filename: str,
                 is_last = i == len(lines) - 1
                 story.append(Paragraph(escape(_shape_rtl(line)),
                                        arabic_right if is_last else arabic_justify))
+        elif bullet:
+            # A real <ul>/<ol> list item: the marker is already known, so render
+            # the full content alongside it (nothing to strip from the text).
+            story.append(Paragraph(markup or "&nbsp;", bullet_style, bulletText=bullet))
         else:
             bullet_match = _BULLET_RE.match(plain)
             if bullet_match:
                 marker = bullet_match.group(1)
-                bullet = marker if marker[0].isdigit() else "•"
+                bullet_text = marker if marker[0].isdigit() else "•"
                 body = _BULLET_RE.sub("", markup, count=1)
-                story.append(Paragraph(body or "&nbsp;", bullet_style, bulletText=bullet))
+                story.append(Paragraph(body or "&nbsp;", bullet_style, bulletText=bullet_text))
             else:
                 story.append(Paragraph(markup, normal_style))
 

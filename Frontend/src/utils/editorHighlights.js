@@ -220,7 +220,13 @@ export function applyHighlights(editor, suggestions) {
 }
 
 /** Strip highlight marks out of an HTML string before persisting/exporting,
- *  so saved documents never carry the red-underline styling. */
+ *  so saved documents never carry the red-underline styling. The editor uses
+ *  <mark> only for the spell-check underline, so we unwrap every mark tag —
+ *  regardless of attribute order, extra classes (e.g. ocr-error-active), or a
+ *  '>' inside the title — keeping the inner text. Otherwise a leftover mark
+ *  would export as a yellow highlight on the affected lines. */
 export function stripHighlights(html = '') {
-  return html.replace(/<mark[^>]*class="ocr-error"[^>]*>([\s\S]*?)<\/mark>/g, '$1');
+  // Match a full <mark>/</mark> tag, tolerating quoted attribute values that may
+  // themselves contain '>' (e.g. a title with a comparison), so nothing leaks.
+  return html.replace(/<\/?mark\b(?:"[^"]*"|'[^']*'|[^>"'])*>/gi, '');
 }

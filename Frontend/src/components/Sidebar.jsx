@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { TbLayoutSidebarRightExpand } from 'react-icons/tb';
 import { cn } from '../utils/cn';
-import logo1 from '../assets/logo1.png';
+import logo1 from '../assets/logo1-transparent.png';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { logout, getLoggedInUser } from '../utils/auth';
 import { useToast } from '../context/ToastContext';
@@ -72,7 +72,7 @@ export function Sidebar({ isMobileOpen, isClosing, onCloseMobileMenu }) {
       {/* Sidebar Content */}
       <aside 
         className={cn(
-          "fixed lg:sticky top-0 left-0 h-screen bg-white shadow-2xl shadow-slate-500/10 z-[52]",
+          "app-sidebar fixed lg:sticky top-0 left-0 h-screen bg-white shadow-2xl shadow-slate-500/10 z-[52]",
           "transition-all duration-500 ease-in-out flex flex-col",
           // Mobile state: translate off-screen when closed
           isMobileOpen && !isClosing ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
@@ -89,20 +89,20 @@ export function Sidebar({ isMobileOpen, isClosing, onCloseMobileMenu }) {
             to="/uploadpage"
             onClick={handleLogoClick}
             className={cn(
-              "flex items-center gap-0 overflow-hidden min-w-0",
+              "flex items-center gap-2 overflow-hidden min-w-0",
               (isExpanded || isMobileOpen) ? "flex-1" : "flex-1 justify-center"
             )}
           >
             <div
               className={cn(
                 "flex-shrink-0",
-                (isExpanded || isMobileOpen) ? "w-16 h-16" : "w-14 h-14"
+                (isExpanded || isMobileOpen) ? "w-8 h-8" : "w-7 h-7"
               )}
             >
               <img
                 src={logo1}
                 alt="HandyText"
-                className="w-full h-full object-contain"
+                className="app-logo-img w-full h-full object-contain"
               />
             </div>
             <span className={cn(
@@ -232,7 +232,7 @@ export function Sidebar({ isMobileOpen, isClosing, onCloseMobileMenu }) {
             to="/settings"
             onClick={onCloseMobileMenu}
             className={cn(
-              "mb-1.5 p-1.5 rounded-lg transition-all duration-200 flex items-center gap-2.5 hover:bg-[#f5f7fb]",
+              "app-profile-card mb-1.5 p-1.5 rounded-lg transition-all duration-200 flex items-center gap-2.5 hover:bg-[#f5f7fb]",
               (isExpanded || isMobileOpen) ? "bg-[#f8fafc]" : "justify-center"
             )}
           >

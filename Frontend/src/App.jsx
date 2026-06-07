@@ -13,6 +13,7 @@ import { Register } from './pages/auth/Register'
 import { ForgotPassword } from './pages/auth/ForgotPassword'
 import { ToastProvider } from './context/ToastContext'
 import { NotificationProvider } from './context/NotificationContext'
+import { ThemeProvider } from './context/ThemeContext'
 import { getSessionExpiresAt, isLoggedIn, logout } from './utils/auth'
 
 function ProtectedRoute({ children }) {
@@ -42,36 +43,38 @@ function ProtectedRoute({ children }) {
 function App() {
   return (
     <ToastProvider>
-      <NotificationProvider>
-        <Router>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
+      <ThemeProvider>
+        <NotificationProvider>
+          <Router>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
 
-            {/* Landing Page Route (No Sidebar) */}
-            <Route path="/" element={<Dashboard />} />
+              {/* Landing Page Route (No Sidebar) */}
+              <Route path="/" element={<Dashboard />} />
 
-            {/* Full-screen Word-like document editor (No Sidebar) */}
-            <Route
-              path="/document/:id/edit"
-              element={<ProtectedRoute><DocumentEditor /></ProtectedRoute>}
-            />
+              {/* Full-screen Word-like document editor (No Sidebar) */}
+              <Route
+                path="/document/:id/edit"
+                element={<ProtectedRoute><DocumentEditor /></ProtectedRoute>}
+              />
 
-            {/* Admin Layout Routes (Has Sidebar) */}
-            <Route element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
-              <Route path="/convert" element={<ConvertSelect />} />
-              <Route path="/handwriting" element={<HandwritingGenerator />} />
-              <Route path="/uploadpage" element={<UploadDashboard />} />
-              <Route path="/history" element={<History />} />
-              {/* Placeholder for other routes */}
-              <Route path="/scanner" element={<UploadDashboard />} />
-              <Route path="/users" element={<UploadDashboard />} />
-              <Route path="/settings" element={<Settings />} />
-            </Route>
-          </Routes>
-        </Router>
-      </NotificationProvider>
+              {/* Admin Layout Routes (Has Sidebar) */}
+              <Route element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
+                <Route path="/convert" element={<ConvertSelect />} />
+                <Route path="/handwriting" element={<HandwritingGenerator />} />
+                <Route path="/uploadpage" element={<UploadDashboard />} />
+                <Route path="/history" element={<History />} />
+                {/* Placeholder for other routes */}
+                <Route path="/scanner" element={<UploadDashboard />} />
+                <Route path="/users" element={<UploadDashboard />} />
+                <Route path="/settings" element={<Settings />} />
+              </Route>
+            </Routes>
+          </Router>
+        </NotificationProvider>
+      </ThemeProvider>
     </ToastProvider>
   )
 }

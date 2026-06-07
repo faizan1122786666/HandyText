@@ -22,10 +22,10 @@ export function AdminLayout() {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row min-h-screen bg-slate-50 font-sans">
+    <div className="app-shell flex flex-col lg:flex-row min-h-screen bg-slate-50 font-sans">
       
       {/* Mobile App Header (Only visible on mobile) */}
-      <div className="lg:hidden w-full h-16 bg-white border-b border-slate-200 px-4 flex items-center sticky top-0 z-30 shadow-sm">
+      <div className="app-mobile-header lg:hidden w-full h-16 bg-white border-b border-slate-200 px-4 flex items-center sticky top-0 z-30 shadow-sm">
         <button
           onClick={toggleMobileMenu}
           className="text-slate-600 p-2 hover:text-[#3461ff] rounded-lg transition-colors"

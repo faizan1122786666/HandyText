@@ -2,16 +2,17 @@ import React, { useState, useRef, useEffect } from 'react';
 import { TbSend2 } from "react-icons/tb";
 import { 
   ArrowLeft,
-  ChevronRight, Sun, Bell, HelpCircle, ChevronDown, CheckCircle2, Settings, Download,
+  ChevronRight, Sun, Moon, Bell, HelpCircle, ChevronDown, CheckCircle2, Settings, Download,
   FileImage, MoreHorizontal, ChevronLeft, ZoomIn, ZoomOut, Maximize, RotateCw, Crop, Wand2, Plus,
   FileText, Undo2, Redo2, RefreshCw, Keyboard, Code, Sparkles, Bold, Italic, Underline, Strikethrough, Highlighter,
   AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered, RemoveFormatting, MessageSquare, History, Check, X,
-  Globe, FileDown, HardDrive, Scan, SquarePen
+  Globe, HardDrive, Scan, SquarePen
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../utils/cn';
 import { useToast } from '../context/ToastContext';
 import { useNotifications } from '../context/NotificationContext';
+import { useTheme } from '../context/ThemeContext';
 import { api, API_URL } from '../utils/api';
 import { getAccessToken } from '../utils/auth';
 import {
@@ -209,6 +210,7 @@ const paginateTextForA4 = (text = '') => {
 export function UploadDashboard() {
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const { isDark, toggleTheme } = useTheme();
   const { addNotification, unreadCount, markAllAsRead, notifications, clearNotifications } = useNotifications();
   const [activeTab, setActiveTab] = useState('ai');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -244,7 +246,6 @@ export function UploadDashboard() {
   const a4TextPages = paginateTextForA4(editorText);
 
   // Dropdown States
-  const [showExportMenu, setShowExportMenu] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [showAccuracyMenu, setShowAccuracyMenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -1275,11 +1276,6 @@ export function UploadDashboard() {
     didInitialSyncRef.current = true;
   }, [activePage, ocrData?.id]);
 
-  useEffect(() => {
-    document.documentElement.classList.remove('dark');
-    localStorage.removeItem('handytext-theme');
-  }, []);
-
   // Persist the workspace so a page refresh keeps the uploaded image(s) and the
   // extracted text instead of clearing everything.
   useEffect(() => {
@@ -1376,7 +1372,14 @@ export function UploadDashboard() {
           
           {/* Icons - Visible on Mobile Only (Top Right) */}
           <div className="flex xl:hidden items-center gap-3 text-slate-500">
-            <button className="hover:text-slate-800 transition-colors"><Sun size={18} /></button>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="hover:text-slate-800 transition-colors"
+              aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
+            >
+              {isDark ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
             <div className="relative">
               <button className="hover:text-slate-800 transition-colors"><Bell size={18} /></button>
               {unreadCount > 0 && (
@@ -1601,7 +1604,7 @@ export function UploadDashboard() {
 
           {/* Export Button */}
           <div className="relative w-full xl:w-auto">
-            <div className="flex rounded-lg shadow-sm overflow-hidden w-full h-[46px] xl:h-auto bg-[#2b51d6]">
+            <div className="flex rounded-lg shadow-sm overflow-hidden w-full h-[46px] xl:h-auto bg-[#3461ff]">
               <button 
                 onClick={() => handleExport('PDF')}
                 className="flex-1 flex items-center justify-center gap-1.5 bg-[#3461ff] hover:bg-[#2b51d6] text-white px-3 py-1.5 text-[13px] font-semibold transition-all h-full"
@@ -1609,35 +1612,21 @@ export function UploadDashboard() {
                 <Download size={14} />
                 Export
               </button>
-              <button 
-                onClick={() => setShowExportMenu(!showExportMenu)}
-                className="flex items-center justify-center bg-[#2b51d6] hover:bg-[#2342b3] text-white px-2.5 py-1.5 border-l border-white/10 transition-all h-full min-w-[38px]"
-              >
-                <ChevronDown size={14} />
-              </button>
             </div>
-
-            {/* Export Dropdown */}
-            {showExportMenu && (
-              <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50">
-                <button onClick={() => handleExport('PDF')} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors text-left">
-                  <FileDown size={14} className="text-slate-400" /> Export as PDF
-                </button>
-                <button onClick={() => handleExport('DOCX')} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors text-left">
-                  <FileText size={14} className="text-slate-400" /> Export as DOCX
-                </button>
-                <button onClick={() => handleExport('TXT')} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors text-left">
-                  <FileText size={14} className="text-slate-400" /> Export as TXT
-                </button>
-              </div>
-            )}
           </div>
         </div>
 
         {/* Right items (Icons) - Desktop Only */}
         <div className="hidden xl:flex items-center gap-4 text-slate-500 xl:w-auto xl:pl-0">
           <div className="flex items-center gap-3 border-r border-slate-200 pr-4">
-            <button className="hover:text-slate-800 transition-colors"><Sun size={18} /></button>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="hover:text-slate-800 transition-colors"
+              aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
+            >
+              {isDark ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
 
             {/* Notifications (Bell Icon) */}
             <div className="relative">

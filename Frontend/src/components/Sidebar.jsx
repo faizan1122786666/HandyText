@@ -12,6 +12,7 @@ import { cn } from '../utils/cn';
 import logo1 from '../assets/logo1.png';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { logout, getLoggedInUser } from '../utils/auth';
+import { useToast } from '../context/ToastContext';
 
 const menuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/' },
@@ -24,6 +25,7 @@ export function Sidebar({ isMobileOpen, isClosing, onCloseMobileMenu }) {
   const [user, setUser] = useState(getLoggedInUser());
   const location = useLocation();
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   // Listen for storage changes to update user reactively
   useEffect(() => {
@@ -48,6 +50,7 @@ export function Sidebar({ isMobileOpen, isClosing, onCloseMobileMenu }) {
   const handleLogout = () => {
     logout();
     onCloseMobileMenu?.();
+    addToast('Logged out successfully', 'success');
     navigate('/login');
   };
 

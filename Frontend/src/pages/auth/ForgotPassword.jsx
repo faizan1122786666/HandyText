@@ -14,12 +14,10 @@ export function ForgotPassword() {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState(Array(6).fill(''));
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   const handleSendOTP = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
     
     const formData = new FormData(e.target);
     const emailVal = formData.get('email');
@@ -30,7 +28,7 @@ export function ForgotPassword() {
       setStep(2);
       addToast('OTP sent to your email!', 'success');
     } catch (err) {
-      setError(err.message);
+      addToast(err?.message || 'Could not send OTP', 'error');
     } finally {
       setLoading(false);
     }
@@ -57,12 +55,11 @@ export function ForgotPassword() {
 
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
 
     const code = otp.join('');
     if (code.length !== 6) {
-      setError('Please enter the 6-digit OTP');
+      addToast('Please enter the 6-digit OTP', 'error');
       setLoading(false);
       return;
     }
@@ -72,7 +69,7 @@ export function ForgotPassword() {
       addToast('OTP verified successfully!', 'success');
       setStep(3);
     } catch (err) {
-      setError(err.message || 'Invalid or expired OTP');
+      addToast(err?.message || 'Invalid or expired OTP', 'error');
     } finally {
       setLoading(false);
     }
@@ -81,7 +78,6 @@ export function ForgotPassword() {
   const handleResetPassword = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
 
     const formData = new FormData(e.target);
     const code = otp.join('');
@@ -89,13 +85,13 @@ export function ForgotPassword() {
     const confirmPassword = formData.get('confirm_password');
 
     if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters long');
+      addToast('Password must be at least 6 characters long', 'error');
       setLoading(false);
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setError('Passwords do not match');
+      addToast('Passwords do not match', 'error');
       setLoading(false);
       return;
     }
@@ -105,7 +101,7 @@ export function ForgotPassword() {
       addToast('Password reset successfully! Please login.', 'success');
       navigate('/login');
     } catch (err) {
-      setError(err.message);
+      addToast(err?.message || 'Could not reset password', 'error');
     } finally {
       setLoading(false);
     }
@@ -123,7 +119,6 @@ export function ForgotPassword() {
                    navigate('/login');
                    return;
                  }
-                 setError('');
                  setStep(step - 1);
                }} 
                className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-all flex-shrink-0"
@@ -152,8 +147,6 @@ export function ForgotPassword() {
                 ? `Enter the 6-digit OTP sent to ${email}. Valid for 1 minute.`
                 : 'Create a new password and confirm it to finish resetting your account.'}
           </p>
-
-          {error && <div className="mb-4 p-3 bg-red-50 text-red-500 text-sm rounded-xl border border-red-100">{error}</div>}
 
           {step === 1 ? (
             <form className="space-y-4" onSubmit={handleSendOTP}>

@@ -132,8 +132,11 @@ async def login(user_in: UserLogin, request: Request):
     except (CollectionWasNotInitialized, PyMongoError) as db_exc:
         raise_db_error(db_exc)
 
-    if not user or not verify_password(user_in.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if not verify_password(user_in.password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
 
     access_token = create_access_token(data={"sub": user.username})
     return {

@@ -7,16 +7,16 @@ import { setLoggedIn } from '../../utils/auth';
 import { api } from '../../utils/api';
 import { GoogleLogin } from '@react-oauth/google';
 import { PasswordInput } from '../../components/PasswordInput';
+import { useToast } from '../../context/ToastContext';
 
 export function Login() {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
     
     const formData = new FormData(e.target);
     const username = formData.get('email'); // Using email as username for now as per backend models/schemas
@@ -25,9 +25,10 @@ export function Login() {
     try {
       const data = await api.post('/auth/login', { username, password });
       setLoggedIn(data);
+      addToast('Login successful', 'success');
       navigate('/convert');
     } catch (err) {
-      setError(err.message);
+      addToast(err?.message || 'Invalid email or password', 'error');
     } finally {
       setLoading(false);
     }
@@ -35,22 +36,22 @@ export function Login() {
 
   const handleGoogleSuccess = async (credentialResponse) => {
     setLoading(true);
-    setError('');
     try {
       const data = await api.post('/auth/google-login', { 
         credential: credentialResponse.credential 
       });
       setLoggedIn(data);
+      addToast('Login successful', 'success');
       navigate('/convert');
     } catch (err) {
-      setError(err.message);
+      addToast(err?.message || 'Google login failed. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleError = () => {
-    setError('Google Login failed. Please try again.');
+    addToast('Google login failed. Please try again.', 'error');
   };
 
   return (
@@ -79,8 +80,6 @@ export function Login() {
 
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Welcome Back!</h2>
           <p className="text-slate-500 mb-6 text-sm">Login to convert handwriting into digital text or digital text into handwriting.</p>
-
-          {error && <div className="mb-4 p-3 bg-red-50 text-red-500 text-sm rounded-xl border border-red-100">{error}</div>}
 
           <form className="space-y-4" onSubmit={handleLogin}>
             <div>

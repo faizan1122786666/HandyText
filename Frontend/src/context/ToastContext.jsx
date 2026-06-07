@@ -11,30 +11,18 @@ const TOAST_VARIANTS = {
   success: {
     title: 'Success',
     Icon: CheckCircle2,
-    badge: 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-emerald-500/30',
-    bar: 'bg-emerald-500',
-    glow: 'shadow-emerald-500/10',
   },
   error: {
     title: 'Something went wrong',
     Icon: AlertCircle,
-    badge: 'bg-gradient-to-br from-rose-400 to-red-600 shadow-red-500/30',
-    bar: 'bg-red-500',
-    glow: 'shadow-red-500/10',
   },
   warning: {
     title: 'Heads up',
     Icon: AlertTriangle,
-    badge: 'bg-gradient-to-br from-amber-400 to-orange-500 shadow-amber-500/30',
-    bar: 'bg-amber-500',
-    glow: 'shadow-amber-500/10',
   },
   info: {
     title: 'Notice',
     Icon: Info,
-    badge: 'bg-gradient-to-br from-blue-400 to-[#3461ff] shadow-blue-500/30',
-    bar: 'bg-[#3461ff]',
-    glow: 'shadow-blue-500/10',
   },
 };
 
@@ -42,7 +30,7 @@ export function ToastProvider({ children }) {
   const addToast = useCallback((message, type = 'success') => {
     const variant = TOAST_VARIANTS[type] || TOAST_VARIANTS.info;
     const { Icon } = variant;
-    const duration = type === 'error' ? 5000 : 3500;
+    const duration = type === 'error' ? 2400 : 1500;
 
     return toast.custom(
       (t) => (
@@ -52,13 +40,13 @@ export function ToastProvider({ children }) {
           className={cn(
             'group pointer-events-auto relative flex items-start gap-3 w-[min(92vw,400px)] p-3.5 pr-3 overflow-hidden',
             'bg-white/95 backdrop-blur-xl rounded-2xl ring-1 ring-slate-900/[0.06]',
-            'shadow-[0_12px_40px_-8px_rgba(15,23,42,0.25)] transition-all duration-300 ease-out',
-            variant.glow,
+            'shadow-[0_12px_40px_-8px_rgba(15,23,42,0.25)] transition-all duration-200 ease-out',
+            'shadow-[#3461ff]/10',
             t.visible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-[120%]',
           )}
         >
           {/* Icon badge */}
-          <div className={cn('shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-lg', variant.badge)}>
+          <div className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-lg bg-[#3461ff] group-hover:bg-[#2b51d6] shadow-[#3461ff]/30 transition-colors">
             <Icon size={18} strokeWidth={2.4} />
           </div>
 
@@ -85,7 +73,7 @@ export function ToastProvider({ children }) {
           {/* Countdown bar (pauses while hovered, in sync with react-hot-toast) */}
           <div className="absolute left-0 bottom-0 h-1 w-full bg-slate-100/70">
             <div
-              className={cn('toast-progress-bar h-full rounded-full group-hover:[animation-play-state:paused]', variant.bar)}
+              className="toast-progress-bar h-full rounded-full bg-[#3461ff] group-hover:bg-[#2b51d6] group-hover:[animation-play-state:paused]"
               style={{ animationDuration: `${duration}ms` }}
             />
           </div>
@@ -104,7 +92,7 @@ export function ToastProvider({ children }) {
         position="top-right"
         gutter={12}
         containerStyle={{ top: 24, right: 24 }}
-        toastOptions={{ duration: 3500 }}
+        toastOptions={{ duration: 1500 }}
       />
     </ToastContext.Provider>
   );

@@ -29,14 +29,42 @@ async def lifespan(app: FastAPI):
         from app.models.feedback import Feedback
         from app.models.otp import OTP
 
-        # Use certifi's CA bundle so the TLS handshake to MongoDB Atlas succeeds
-        # on Windows, where Python's OpenSSL may not find the system CA store
-        # (otherwise fails with "SSL: TLSV1_ALERT_INTERNAL_ERROR").
-        mongo_client = AsyncIOMotorClient(
-            get_database_url(),
-            tlsCAFile=certifi.where(),
-            serverSelectionTimeoutMS=20000,
-        )
+        database_url = get_database_url()
+
+        async def connect_mongo():
+            attempts = [
+                {
+                    "name": "certifi CA bundle",
+                    "options": {"tlsCAFile": certifi.where()},
+                },
+                {
+                    "name": "default Windows certificate store",
+                    "options": {},
+                },
+                {
+                    "name": "development TLS fallback",
+                    "options": {"tls": True, "tlsAllowInvalidCertificates": True},
+                },
+            ]
+
+            last_error = None
+            for attempt in attempts:
+                client = AsyncIOMotorClient(
+                    database_url,
+                    serverSelectionTimeoutMS=8000,
+                    **attempt["options"],
+                )
+                try:
+                    await client.admin.command("ping")
+                    logger.info("MongoDB connected using %s", attempt["name"])
+                    return client
+                except Exception as exc:
+                    last_error = exc
+                    client.close()
+                    logger.warning("MongoDB connection failed using %s: %s", attempt["name"], exc)
+            raise last_error
+
+        mongo_client = await connect_mongo()
         # Use the default database specified in the connection string
         db = mongo_client.get_default_database()
         await init_beanie(database=db, document_models=[User, Conversion, Feedback, OTP])

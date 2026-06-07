@@ -3,7 +3,10 @@ from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
+from fastapi import Request
 from fastapi.security import OAuth2PasswordBearer
+from beanie.exceptions import CollectionWasNotInitialized
+from pymongo.errors import PyMongoError
 from ..config import settings
 from ..models.user import User
 from ..schemas.user import TokenData
@@ -28,6 +31,16 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
+def require_db_ready(request: Request):
+    if getattr(request.app.state, "db_ready", False):
+        return
+
+    db_error = getattr(request.app.state, "db_error", None)
+    detail = "Database is not connected. Please check Backend/.env DATABASE_URL and restart backend."
+    if db_error:
+        detail = f"{detail} Startup error: {db_error}"
+    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
+
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -43,7 +56,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise credentials_exception
     
-    user = await User.find_one({"username": token_data.username})
+    try:
+        user = await User.find_one({"username": token_data.username})
+    except (CollectionWasNotInitialized, PyMongoError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Database is not ready. Please restart backend and verify DATABASE_URL. Error: {exc}",
+        )
     if user is None:
         raise credentials_exception
     return user
@@ -61,4 +80,7 @@ async def get_optional_current_user(
     except JWTError:
         return None
 
-    return await User.find_one({"username": username})
+    try:
+        return await User.find_one({"username": username})
+    except (CollectionWasNotInitialized, PyMongoError):
+        return None

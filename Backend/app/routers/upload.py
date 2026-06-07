@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Form
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Form, Request
 from typing import List, Optional
 from datetime import datetime
 import os
@@ -7,7 +7,7 @@ import aiofiles
 from ..models.conversion import Conversion
 from ..models.user import User
 from ..schemas.conversion import ConversionOut, ConversionRename
-from ..utils.auth import get_current_user, get_optional_current_user
+from ..utils.auth import get_current_user, get_optional_current_user, require_db_ready
 from ..utils.file_validator import validate_file
 from ..services.ocr_service import run_ocr
 from ..services.ocr_layout import reflow_paragraphs, should_preserve_line_breaks
@@ -87,6 +87,7 @@ def build_formatted_ocr_html(ocr_result: dict) -> Optional[str]:
 
 @router.post("/convert", response_model=ConversionOut)
 async def convert_image(
+    request: Request,
     file: UploadFile = File(...),
     language: str = Form("en"),
     enhanceImage: bool = Form(True),
@@ -111,14 +112,19 @@ async def convert_image(
     cloudinary_result = upload_image(local_file_path)
     file_url = cloudinary_result["url"]
 
-    # Create conversion record
+    db_ready = getattr(request.app.state, "db_ready", False)
+
+    # Create conversion record. If MongoDB is unavailable, keep a temporary
+    # in-memory object so OCR can still return extracted text to the frontend.
     conversion = Conversion(
+        id=PydanticObjectId(),
         user_id=str(current_user.id) if current_user else None,
         original_filename=resolve_upload_filename(file.filename),
         file_path=file_url,
         status="pending"
     )
-    await conversion.insert()
+    if db_ready:
+        await conversion.insert()
 
     try:
         # Preprocess locally
@@ -159,20 +165,23 @@ async def convert_image(
     except Exception as e:
         conversion.status = "failed"
         print(f"Conversion failed: {e}")
-        await conversion.save()
+        if db_ready:
+            await conversion.save()
         raise HTTPException(status_code=500, detail=f"OCR processing failed: {str(e)}")
 
-    await conversion.save()
+    if db_ready:
+        await conversion.save()
     return conversion
 
 @router.get("/history", response_model=List[ConversionOut])
 async def get_history(
+    _: None = Depends(require_db_ready),
     current_user: User = Depends(get_current_user)
 ):
     return await Conversion.find({"user_id": str(current_user.id)}).sort("-created_at").limit(20).to_list()
 
 @router.get("/conversion/{id}", response_model=ConversionOut)
-async def get_conversion(id: str):
+async def get_conversion(id: str, _: None = Depends(require_db_ready)):
     conversion = await Conversion.get(PydanticObjectId(id))
     if not conversion:
         raise HTTPException(status_code=404, detail="Conversion not found")
@@ -182,6 +191,7 @@ async def get_conversion(id: str):
 async def rename_conversion(
     id: str,
     body: ConversionRename,
+    _: None = Depends(require_db_ready),
     current_user: User = Depends(get_current_user),
 ):
     new_name = body.original_filename.strip()
@@ -205,6 +215,7 @@ async def rename_conversion(
 @router.delete("/conversion/{id}")
 async def delete_conversion(
     id: str,
+    _: None = Depends(require_db_ready),
     current_user: User = Depends(get_current_user)
 ):
     conversion = await Conversion.get(PydanticObjectId(id))

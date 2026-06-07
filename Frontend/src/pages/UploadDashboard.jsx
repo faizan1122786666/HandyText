@@ -6,7 +6,7 @@ import {
   FileImage, MoreHorizontal, ChevronLeft, ZoomIn, ZoomOut, Maximize, RotateCw, Crop, Wand2, Plus,
   FileText, Undo2, Redo2, RefreshCw, Keyboard, Code, Sparkles, Bold, Italic, Underline, Strikethrough, Highlighter,
   AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered, RemoveFormatting, MessageSquare, History, Check, X,
-  Globe, HardDrive, Scan, SquarePen
+  Globe, FileDown, HardDrive, Scan, SquarePen
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../utils/cn';
@@ -246,6 +246,7 @@ export function UploadDashboard() {
   const a4TextPages = paginateTextForA4(editorText);
 
   // Dropdown States
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [showAccuracyMenu, setShowAccuracyMenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -333,8 +334,6 @@ export function UploadDashboard() {
     setBlockStyle(style.label);
     setShowBlockMenu(false);
   };
-
-
 
   const getEditorPlainText = () => editorRef.current?.innerText ?? editorText;
 
@@ -1612,7 +1611,28 @@ export function UploadDashboard() {
                 <Download size={14} />
                 Export
               </button>
+              <button 
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                className="flex items-center justify-center bg-[#2b51d6] hover:bg-[#2342b3] text-white px-2.5 py-1.5 border-l border-white/10 transition-all h-full min-w-[38px]"
+              >
+                <ChevronDown size={14} />
+              </button>
             </div>
+
+            {/* Export Dropdown */}
+            {showExportMenu && (
+              <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50">
+                <button onClick={() => handleExport('PDF')} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors text-left">
+                  <FileDown size={14} className="text-slate-400" /> Export as PDF
+                </button>
+                <button onClick={() => handleExport('DOCX')} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors text-left">
+                  <FileText size={14} className="text-slate-400" /> Export as DOCX
+                </button>
+                <button onClick={() => handleExport('TXT')} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors text-left">
+                  <FileText size={14} className="text-slate-400" /> Export as TXT
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

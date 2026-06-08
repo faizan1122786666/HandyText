@@ -20,6 +20,7 @@ import {
   buildLocalCorrections,
   mapApiCorrections,
 } from '../utils/editorHighlights';
+import { upsertLocalConversionHistoryItem } from '../utils/localConversionHistory';
 
 const formatFileSize = (bytes) => {
   if (!bytes || bytes <= 0) return '0 B';
@@ -1057,6 +1058,7 @@ export function UploadDashboard() {
       formData.append('confidenceThreshold', ocrSettings.confidenceThreshold);
       
       const data = await api.post('/upload/convert', formData, true);
+      upsertLocalConversionHistoryItem(data);
       
       // Update the page with actual OCR data and permanent ID
       const updatedPages = [...pages];
@@ -1253,6 +1255,13 @@ export function UploadDashboard() {
         format: format.toUpperCase(),
         type: 'export',
       });
+      if (ocrData) {
+        upsertLocalConversionHistoryItem(ocrData, {
+          exported_format: ext,
+          exported_filename: exportFileName,
+          exported_at: new Date().toISOString(),
+        });
+      }
       addToast(`Downloaded ${exportFileName} (${fileSize})`, 'success');
     } catch (err) {
       addToast(err?.message || 'Export failed', 'error');

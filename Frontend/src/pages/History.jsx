@@ -3,11 +3,25 @@ import { Search, Download, Trash2, FileText, Calendar, HardDrive, MoreVertical, 
 import { cn } from '../utils/cn';
 import { useToast } from '../context/ToastContext';
 import { api, API_URL } from '../utils/api';
+import { getAccessToken } from '../utils/auth';
 import {
   deleteHandwritingHistoryItem,
   loadHandwritingHistory,
   renameHandwritingHistoryItem,
 } from '../utils/handwritingHistory';
+import {
+  deleteLocalConversionHistoryItem,
+  loadLocalConversionHistory,
+  renameLocalConversionHistoryItem,
+} from '../utils/localConversionHistory';
+
+const mergeHistory = (remoteItems = []) => {
+  const byId = new Map();
+  [...loadLocalConversionHistory(), ...remoteItems, ...loadHandwritingHistory()].forEach((item) => {
+    if (item?.id) byId.set(String(item.id), item);
+  });
+  return Array.from(byId.values());
+};
 
 export function History() {
   const { addToast } = useToast();
@@ -22,10 +36,9 @@ export function History() {
     setLoading(true);
     try {
       const data = await api.get('/upload/history');
-      setHistory([...data, ...loadHandwritingHistory()]);
+      setHistory(mergeHistory(data));
     } catch (err) {
-      const localHandwriting = loadHandwritingHistory();
-      setHistory(localHandwriting);
+      setHistory(mergeHistory());
       addToast('Failed to fetch upload history: ' + err.message, 'error');
     } finally {
       setLoading(false);
@@ -70,8 +83,11 @@ export function History() {
         const item = history.find((entry) => entry.id === id);
         if (item?.type === 'handwriting') {
           deleteHandwritingHistoryItem(id);
+        } else if (item?.type === 'ocr') {
+          deleteLocalConversionHistoryItem(id);
         } else {
           await api.delete(`/upload/conversion/${id}`);
+          deleteLocalConversionHistoryItem(id);
         }
         setHistory(history.filter(item => item.id !== id));
         addToast('Document deleted successfully', 'success');
@@ -97,7 +113,7 @@ export function History() {
     link.remove();
   };
 
-  const handleDownload = (item, format) => {
+  const handleDownload = async (item, format) => {
     addToast(`Exporting as ${format}...`, 'info');
     if (item.type === 'handwriting') {
       const ext = format.toLowerCase();
@@ -107,8 +123,38 @@ export function History() {
       );
       return;
     }
-    const endpoint = `/export/${item.id}/${format.toLowerCase()}`;
-    window.open(`${API_URL}${endpoint}`, '_blank');
+
+    try {
+      const ext = format.toLowerCase();
+      const headers = {};
+      const token = getAccessToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const response = await fetch(`${API_URL}/export/${item.id}/${ext}`, { headers });
+      if (!response.ok) {
+        let detail = 'Download failed';
+        try {
+          const err = await response.json();
+          detail = err.detail || detail;
+        } catch {
+          detail = response.statusText || detail;
+        }
+        throw new Error(detail);
+      }
+
+      const blob = await response.blob();
+      const baseName = (item.original_filename || 'document').replace(/\.[^/.]+$/, '');
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${baseName}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+      addToast(`Downloaded ${baseName}.${ext}`, 'success');
+    } catch (err) {
+      addToast(err?.message || 'Download failed', 'error');
+    }
   };
 
   const openRenameDialog = (item) => {
@@ -133,11 +179,15 @@ export function History() {
     try {
       const updated = renameTarget.type === 'handwriting'
         ? { ...renameTarget, original_filename: trimmed }
+        : renameTarget.type === 'ocr'
+          ? { ...renameTarget, original_filename: trimmed }
         : await api.patch(`/upload/conversion/${renameTarget.id}`, {
             original_filename: trimmed,
           });
       if (renameTarget.type === 'handwriting') {
         renameHandwritingHistoryItem(renameTarget.id, trimmed);
+      } else if (renameTarget.type === 'ocr') {
+        renameLocalConversionHistoryItem(renameTarget.id, trimmed);
       }
       setHistory((prev) =>
         prev.map((item) => (item.id === renameTarget.id ? { ...item, ...updated } : item))
@@ -328,9 +378,12 @@ export function History() {
                           </div>
                           <div className="min-w-0">
                             <span className="block font-bold text-slate-800 text-xs truncate">{item.original_filename}</span>
-                            {item.type === 'handwriting' && (
-                              <span className="text-[10px] font-bold uppercase tracking-wide text-violet-500">Digital to handwriting</span>
-                            )}
+                            <span className={cn(
+                              "text-[10px] font-bold uppercase tracking-wide",
+                              item.type === 'handwriting' ? "text-violet-500" : "text-blue-500"
+                            )}>
+                              {item.type === 'handwriting' ? 'Digital to handwriting' : 'Handwritten to digital text'}
+                            </span>
                           </div>
                         </div>
                       </td>
@@ -383,9 +436,12 @@ export function History() {
                       </div>
                       <div className="flex flex-col">
                         <span className="font-bold text-slate-900 text-[15px] leading-tight mb-1.5">{item.original_filename}</span>
-                        {item.type === 'handwriting' && (
-                          <span className="mb-1 text-[10px] font-bold uppercase tracking-wide text-violet-500">Digital to handwriting</span>
-                        )}
+                        <span className={cn(
+                          "mb-1 text-[10px] font-bold uppercase tracking-wide",
+                          item.type === 'handwriting' ? "text-violet-500" : "text-blue-500"
+                        )}>
+                          {item.type === 'handwriting' ? 'Digital to handwriting' : 'Handwritten to digital text'}
+                        </span>
                         <div className="flex items-center gap-3">
                            <span className="text-[12px] text-slate-400 flex items-center gap-1 font-medium">
                              <Calendar size={14} className="text-slate-300" /> {formatDate(item.created_at)}

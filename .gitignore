@@ -7,12 +7,12 @@ __pycache__/
 *.so
 
 # Virtual environments
-venv/
-.venv/
-env/
-ENV/
-Backend/venv/
-Backend/.venv/
+# venv/
+# .venv/
+# env/
+# ENV/
+# Backend/venv/
+# Backend/.venv/
 
 # Environment variables and secrets
 # .env
@@ -25,9 +25,9 @@ Backend/.venv/
 # Backend/.env.example
 
 # Node.js
-node_modules/
-Frontend/node_modules/
-Backend/node_modules/
+# node_modules/
+# Frontend/node_modules/
+# Backend/node_modules/
 
 # Build folders
 build/

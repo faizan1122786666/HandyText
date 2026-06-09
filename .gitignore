@@ -7,27 +7,30 @@ __pycache__/
 *.so
 
 # Virtual environments
-# venv/
-# .venv/
-# env/
-# ENV/
-# Backend/venv/
-# Backend/.venv/
+venv/
+.venv/
+env/
+ENV/
+Backend/venv/
+Backend/.venv/
 
 # Environment variables and secrets
-# .env
-# .env.local
-# .env.*
-# Frontend/.env
-# Frontend/.env.local
-# Backend/.env
-# Backend/.env.local
-# Backend/.env.example
+.env
+.env.local
+.env.*
+Frontend/.env
+Frontend/.env.local
+Backend/.env
+Backend/.env.local
+# Keep example env files committed so setup instructions still work.
+!.env.example
+!Frontend/.env.example
+!Backend/.env.example
 
 # Node.js
-# node_modules/
-# Frontend/node_modules/
-# Backend/node_modules/
+node_modules/
+Frontend/node_modules/
+Backend/node_modules/
 
 # Build folders
 build/
